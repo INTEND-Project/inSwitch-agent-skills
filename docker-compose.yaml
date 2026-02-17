@@ -1,0 +1,16 @@
+services:
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    ports:
+      - "8085:8090"
+    volumes:
+      - ./workspace:/workspace
+      - ./logs:/logs
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "8086:80"
