@@ -16,7 +16,6 @@ from openai import OpenAI
 CODE_DIR = os.getenv("AGENT_CODE_DIR", "/agent")
 WORKSPACE_DIR = os.getenv("AGENT_WORKSPACE_DIR", "/workspace")
 LOGS_DIR = os.getenv("AGENT_LOGS_DIR", "/logs")
-API_KEY_FILE = os.getenv("OPENAI_API_KEY_FILE", os.path.join(CODE_DIR, "openai.credential"))
 MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 VERBOSE_DEFAULT = os.getenv("AGENT_VERBOSE", "true").lower() in {"1", "true", "yes", "on"}
 MAX_LOG_CHARS = int(os.getenv("AGENT_LOG_MAX_CHARS", "2000"))
@@ -821,11 +820,9 @@ def extract_text(response: Any) -> str:
 
 
 def load_api_key() -> str:
-    if not os.path.isfile(API_KEY_FILE):
-        raise FileNotFoundError(f"Missing API key file: {API_KEY_FILE}")
-    key = read_text_file(API_KEY_FILE).strip()
+    key = os.getenv("OPENAI_API_KEY", "").strip()
     if not key:
-        raise ValueError(f"API key file is empty: {API_KEY_FILE}")
+        raise ValueError("OPENAI_API_KEY environment variable is not set or empty.")
     return key
 
 
@@ -840,7 +837,7 @@ def main() -> None:
         api_key = load_api_key()
     except Exception as exc:
         print(f"Error: {exc}")
-        print("Create /agent/openai.credential with your OpenAI API key (plain text).")
+        print("Set the OPENAI_API_KEY environment variable before starting the container.")
         sys.exit(1)
 
     client = OpenAI(api_key=api_key)

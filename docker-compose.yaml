@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8085:8090"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - ./workspace:/workspace
       - ./logs:/logs
