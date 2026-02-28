@@ -20,7 +20,7 @@ MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 VERBOSE_DEFAULT = os.getenv("AGENT_VERBOSE", "true").lower() in {"1", "true", "yes", "on"}
 MAX_LOG_CHARS = int(os.getenv("AGENT_LOG_MAX_CHARS", "2000"))
 HTTP_HOST_DEFAULT = os.getenv("AGENT_HTTP_HOST", "0.0.0.0")
-HTTP_PORT_DEFAULT = int(os.getenv("AGENT_HTTP_PORT", "8090"))
+HTTP_PORT_DEFAULT = int(os.getenv("AGENT_HTTP_PORT", "8085"))
 
 
 class LogStreamHub:

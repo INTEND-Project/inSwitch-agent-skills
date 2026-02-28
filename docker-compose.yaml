@@ -4,7 +4,7 @@ services:
       context: ./agent
       dockerfile: Dockerfile
     ports:
-      - "8085:8090"
+      - "8085:8085"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
@@ -15,4 +15,4 @@ services:
       context: ./dashboard
       dockerfile: Dockerfile
     ports:
-      - "8086:80"
+      - "8086:8086"
