@@ -27,7 +27,7 @@ The key is not the number of tools, but that the set is sufficient. This keeps t
 Instead of injecting every skill into every prompt, skills are treated like libraries:
 
 - The captain loads the global `skills/SKILL.md` once per request for overall workflow guidance.
-- The system maintains an overview list of all skills, extracted from the first section of each skill file.
+- The system only loads the assigned folder's `SKILL.md` for each agent.
 - A sub-agent loads the full `SKILL.md` only when the captain delegates a task that needs it.
 
 This is a pragmatic way to scale: each agent sees the smallest possible context that still contains the instructions it needs. That makes behavior more robust in difficult or ambiguous scenarios.

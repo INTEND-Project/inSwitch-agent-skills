@@ -46,7 +46,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [logStatus, setLogStatus] = useState<'connected' | 'disconnected'>('disconnected');
-  const [selectedValue, setSelectedValue] = useState<string | null>(null);
+  const [selectedValue, setSelectedValue] = useState<unknown | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -57,6 +57,7 @@ const App: React.FC = () => {
   const nodeTimers = useRef<Map<string, number>>(new Map());
   const edgeTimers = useRef<Map<string, number>>(new Map());
   const nodeIndex = useRef(0);
+  const buildNodeId = useCallback((kind: GraphKind, name: string) => `${kind}:${name}`, []);
 
   const canSend = useMemo(() => input.trim().length > 0 && !isSending, [input, isSending]);
 
@@ -175,14 +176,15 @@ const App: React.FC = () => {
   const ensureNode = useCallback(
     (name: string, kind: GraphKind) => {
       if (!name) return;
-      const existing = nodesRef.current.find((node) => node.id === name);
+      const id = buildNodeId(kind, name);
+      const existing = nodesRef.current.find((node) => node.id === id);
       if (existing) {
-        highlightNode(name);
+        highlightNode(id);
         return;
       }
       const position = nextPosition();
       const newNode: Node<GraphNodeData> = {
-        id: name,
+        id,
         position,
         data: { label: name, kind },
         type: 'default',
@@ -190,7 +192,7 @@ const App: React.FC = () => {
       };
       setNodes((prev) => [...prev, newNode]);
     },
-    [highlightNode, nextPosition, setNodes]
+    [buildNodeId, highlightNode, nextPosition, setNodes]
   );
 
   const ensureEdge = useCallback(
@@ -230,7 +232,13 @@ const App: React.FC = () => {
         ensureNode(payload.agent, 'agent');
         if (payload.created_by) {
           ensureNode(payload.created_by, 'agent');
-          ensureEdge(payload.created_by, payload.agent, 'creates');
+          if (payload.agent) {
+            ensureEdge(
+              buildNodeId('agent', payload.created_by),
+              buildNodeId('agent', payload.agent),
+              'creates'
+            );
+          }
         }
         return;
       }
@@ -238,31 +246,55 @@ const App: React.FC = () => {
       if (event === 'skill_loaded') {
         ensureNode(payload.agent, 'agent');
         ensureNode(payload.skill, 'skill');
-        ensureEdge(payload.agent, payload.skill, 'skill');
+        if (payload.agent && payload.skill) {
+          ensureEdge(
+            buildNodeId('agent', payload.agent),
+            buildNodeId('skill', payload.skill),
+            'skill'
+          );
+        }
         return;
       }
 
       if (event === 'tool_invocation') {
         ensureNode(payload.agent, 'agent');
         ensureNode(payload.tool, 'tool');
-        ensureEdge(payload.agent, payload.tool, 'calls');
+        if (payload.agent && payload.tool) {
+          ensureEdge(
+            buildNodeId('agent', payload.agent),
+            buildNodeId('tool', payload.tool),
+            'calls'
+          );
+        }
         return;
       }
 
       if (event === 'tool_result') {
         ensureNode(payload.agent, 'agent');
         ensureNode(payload.tool, 'tool');
-        ensureEdge(payload.tool, payload.agent, 'returns');
+        if (payload.agent && payload.tool) {
+          ensureEdge(
+            buildNodeId('tool', payload.tool),
+            buildNodeId('agent', payload.agent),
+            'returns'
+          );
+        }
         return;
       }
 
       if (event === 'agent_message') {
         ensureNode(payload.from, 'agent');
         ensureNode(payload.to, 'agent');
-        ensureEdge(payload.from, payload.to, 'sends');
+        if (payload.from && payload.to) {
+          ensureEdge(
+            buildNodeId('agent', payload.from),
+            buildNodeId('agent', payload.to),
+            'sends'
+          );
+        }
       }
     },
-    [ensureEdge, ensureNode]
+    [buildNodeId, ensureEdge, ensureNode]
   );
 
   useEffect(() => {
@@ -345,6 +377,76 @@ const App: React.FC = () => {
     }
   };
 
+  const safeStringify = (value: unknown, spacing = 0) => {
+    try {
+      return JSON.stringify(value, null, spacing);
+    } catch {
+      return null;
+    }
+  };
+
+  const parseJsonValue = (value: unknown) => {
+    if (typeof value === 'string') {
+      try {
+        return { type: 'json' as const, data: JSON.parse(value) };
+      } catch {
+        return { type: 'plain' as const, text: value };
+      }
+    }
+    if (value !== null && typeof value === 'object') {
+      return { type: 'json' as const, data: value };
+    }
+    return { type: 'plain' as const, text: String(value) };
+  };
+
+  const highlightJson = (json: string) => {
+    const escaped = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return escaped.replace(
+      /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(?:\\s*:)?|\\b(true|false|null)\\b|-?\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d+)?)/g,
+      (match) => {
+        let cls = 'json-number';
+        if (match.startsWith('"')) {
+          cls = match.endsWith(':') ? 'json-key' : 'json-string';
+        } else if (match === 'true' || match === 'false') {
+          cls = 'json-boolean';
+        } else if (match === 'null') {
+          cls = 'json-null';
+        }
+        return `<span class="${cls}">${match}</span>`;
+      }
+    );
+  };
+
+  const renderValueDetails = (value: unknown) => {
+    const parsed = parseJsonValue(value);
+    if (parsed.type === 'json') {
+      const pretty = safeStringify(parsed.data, 2);
+      if (pretty) {
+        const highlighted = highlightJson(pretty);
+        const lines = highlighted.split('\n');
+        return (
+          <div className="json-viewer">
+            {lines.map((line, idx) => (
+              <div key={idx} className="json-line">
+                <span className="json-line-no">{idx + 1}</span>
+                <span
+                  className="json-line-code"
+                  dangerouslySetInnerHTML={{ __html: line.length === 0 ? '&nbsp;' : line }}
+                />
+              </div>
+            ))}
+          </div>
+        );
+      }
+    }
+
+    return (
+      <pre className="log-plain-value">
+        {parsed.type === 'plain' ? parsed.text : String(value)}
+      </pre>
+    );
+  };
+
   const renderLogEntry = (entry: string, index: number) => {
     let payload: any;
     try {
@@ -369,24 +471,25 @@ const App: React.FC = () => {
     delete params.ts;
 
     const formatValue = (value: any) => {
+      const previewLimit = 18;
       if (value === null || value === undefined) {
-        return { display: String(value), full: String(value), truncated: false };
+        return { display: String(value), raw: value, truncated: false };
       }
       if (typeof value === 'string') {
-        if (value.length > 15) {
-          return { display: value.slice(0, 15), full: value, truncated: true };
+        if (value.length > previewLimit) {
+          return { display: value.slice(0, previewLimit), raw: value, truncated: true };
         }
-        return { display: value, full: value, truncated: false };
+        return { display: value, raw: value, truncated: false };
       }
       if (typeof value === 'object') {
-        const json = JSON.stringify(value);
-        if (json.length > 15) {
-          return { display: json.slice(0, 15), full: json, truncated: true };
+        const json = safeStringify(value) ?? String(value);
+        if (json.length > previewLimit) {
+          return { display: json.slice(0, previewLimit), raw: value, truncated: true };
         }
-        return { display: json, full: json, truncated: false };
+        return { display: json, raw: value, truncated: false };
       }
       const text = String(value);
-      return { display: text, full: text, truncated: false };
+      return { display: text, raw: value, truncated: false };
     };
 
     return (
@@ -411,7 +514,7 @@ const App: React.FC = () => {
                   <button
                     type="button"
                     className="log-value-button"
-                    onClick={() => setSelectedValue(formatted.full)}
+                    onClick={() => setSelectedValue(formatted.raw)}
                   >
                     {content}
                   </button>
@@ -534,7 +637,7 @@ const App: React.FC = () => {
               </button>
             </div>
             <div className="log-modal-body">
-              <pre>{selectedValue}</pre>
+              {renderValueDetails(selectedValue)}
             </div>
           </div>
         </div>

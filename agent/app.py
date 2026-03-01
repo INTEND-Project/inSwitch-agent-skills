@@ -110,6 +110,22 @@ def extract_frontmatter_description(skill_text: str) -> str:
     return ""
 
 
+def extract_frontmatter_compatibility(skill_text: str) -> str:
+    lines = skill_text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return ""
+    idx = 1
+    while idx < len(lines):
+        line = lines[idx]
+        if line.strip() == "---":
+            break
+        if line.startswith("compatibility:"):
+            raw = line.split(":", 1)[1].strip()
+            return raw.strip().strip('"').strip("'")
+        idx += 1
+    return ""
+
+
 def extract_frontmatter_name(skill_text: str) -> str:
     lines = skill_text.splitlines()
     if not lines or lines[0].strip() != "---":
@@ -124,6 +140,39 @@ def extract_frontmatter_name(skill_text: str) -> str:
             return raw.strip().strip('"').strip("'")
         idx += 1
     return ""
+
+
+def extract_setup_section(skill_text: str) -> str:
+    lines = skill_text.splitlines()
+    start_idx = None
+    for idx, line in enumerate(lines):
+        if line.startswith("## "):
+            title = line[3:].strip().lower()
+            if title == "setup" or title.startswith("setup:"):
+                start_idx = idx
+                break
+    if start_idx is None:
+        return ""
+    end_idx = len(lines)
+    for idx in range(start_idx + 1, len(lines)):
+        if lines[idx].startswith("## "):
+            end_idx = idx
+            break
+    section = "\n".join(lines[start_idx:end_idx]).strip()
+    return section
+
+
+def build_environment_notes(skill_text: str) -> str:
+    compatibility = extract_frontmatter_compatibility(skill_text)
+    setup = extract_setup_section(skill_text)
+    notes: List[str] = []
+    if compatibility:
+        notes.append("Compatibility requirements:\n" + compatibility)
+    if setup:
+        notes.append(
+            "Setup instructions (follow on skill load if needed):\n" + setup
+        )
+    return "\n\n".join(notes)
 
 
 def normalize_folder_path(folder_path: str) -> str:
@@ -146,37 +195,24 @@ def resolve_folder_abs(folder_path: str) -> str:
     return abs_path
 
 
+def resolve_agent_path(agent: "AgentState", path: Optional[str]) -> str:
+    base = resolve_folder_abs(agent.folder_path or ".")
+    if not path:
+        return base
+    if os.path.isabs(path):
+        return safe_abs_path(path)
+    return safe_abs_path(os.path.join(base, path))
+
+
 def list_folder_overview(folder_path: str) -> str:
     folder_abs = resolve_folder_abs(folder_path)
     if not os.path.isdir(folder_abs):
         return f"No folder found: {folder_path}"
 
-    entries: List[str] = []
     current_skill = os.path.join(folder_abs, "SKILL.md")
     if os.path.isfile(current_skill):
-        entries.append("- (current) SKILL.md: present")
-    else:
-        entries.append("- (current) SKILL.md: missing")
-
-    for entry in sorted(os.listdir(folder_abs)):
-        if entry == "SKILL.md":
-            continue
-        child_path = os.path.join(folder_abs, entry)
-        if not os.path.isdir(child_path):
-            continue
-        skill_file = os.path.join(child_path, "SKILL.md")
-        if not os.path.isfile(skill_file):
-            continue
-        description = extract_frontmatter_description(read_text_file(skill_file))
-        if description:
-            entries.append(f"- {entry}: {description}")
-        else:
-            entries.append(f"- {entry}: (no description found)")
-
-    if not entries:
-        return "No folders found."
-
-    return "Available folders:\n" + "\n".join(entries)
+        return "Current folder skill: SKILL.md present"
+    return "Current folder skill: SKILL.md missing"
 
 
 def load_folder_skill(folder_path: str) -> str:
@@ -200,12 +236,20 @@ def build_captain_prompt(folder_overview: str, folder_skill: str) -> str:
     captain_rules = (
         "You are the main coordinator agent named 'captain'. "
         "Use the SKILL.md for your assigned folder below for domain instructions and workflows. "
-        "When a task should be specialized, split it into subtasks and delegate them via the delegate_task tool. "
+        "Treat the SKILL.md as binding instructions; follow it exactly and refuse or ask for clarification if a request conflicts. "
+        "When the skill is loaded, verify any compatibility requirements and run the setup instructions if needed before proceeding. "
+        "If requirements are missing and no setup instructions exist, ask for guidance. "
+        "When a task should be specialized split it into subtasks and delegate them via the delegate_task tool. "
+        "This tool will create another agent with specified folder."
+        "This also applies when you see the need to use a different skill - create a new agent using delegate_task tool, and appoint the folder with that skill."
         "Each sub-agent must be assigned a folder that is the same as yours or a sub-folder under yours."
     )
     sections = [base, captain_rules]
     if folder_skill:
         sections.append("Folder SKILL.md:\n" + folder_skill)
+        environment_notes = build_environment_notes(folder_skill)
+        if environment_notes:
+            sections.append(environment_notes)
     if folder_overview:
         sections.append(folder_overview)
     return "\n\n".join(section for section in sections if section).strip()
@@ -216,9 +260,17 @@ def build_worker_prompt(folder_path: str, skill_content: str, agent_name: str, f
     worker_rules = (
         f"You are a specialized sub-agent named '{agent_name}'. "
         f"You are strictly limited to the folder '{folder_path}' and must not use or request folders outside it. "
+        "Treat the SKILL.md as binding instructions; follow it exactly and refuse or ask for clarification if a request conflicts. "
+        "When the skill is loaded, verify any compatibility requirements and run the setup instructions if needed before proceeding. "
+        "If requirements are missing and no setup instructions exist, ask for guidance. "
         "If a request is outside this folder, say so plainly."
     )
-    sections = [base, worker_rules, f"Folder SKILL.md:\n{skill_content}", folder_overview]
+    sections = [base, worker_rules, f"Folder SKILL.md:\n{skill_content}"]
+    environment_notes = build_environment_notes(skill_content)
+    if environment_notes:
+        sections.append(environment_notes)
+    if folder_overview:
+        sections.append(folder_overview)
     return "\n\n".join(section for section in sections if section).strip()
 
 
@@ -227,14 +279,14 @@ def tool_definitions(include_delegate: bool) -> List[Dict[str, Any]]:
         {
             "type": "function",
             "name": "run_shell",
-            "description": "Run a shell command in the container and return stdout, stderr, and exit code.",
+            "description": "Run a shell command in the container and return stdout, stderr, and exit code. Defaults to the agent's folder if cwd is not provided.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "Shell command to execute."},
                     "cwd": {
                         "type": "string",
-                        "description": "Working directory. Defaults to /workspace.",
+                        "description": "Working directory. Defaults to the agent's folder under /workspace.",
                     },
                 },
                 "required": ["command"],
@@ -255,7 +307,7 @@ def tool_definitions(include_delegate: bool) -> List[Dict[str, Any]]:
         {
             "type": "function",
             "name": "read_file",
-            "description": "Read a UTF-8 text file under /workspace, /agent, or /logs.",
+            "description": "Read a UTF-8 text file under /workspace, /agent, or /logs. Relative paths resolve from the agent's folder.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -267,7 +319,7 @@ def tool_definitions(include_delegate: bool) -> List[Dict[str, Any]]:
         {
             "type": "function",
             "name": "write_file",
-            "description": "Write UTF-8 text to a file under /workspace, /agent, or /logs, creating directories if needed.",
+            "description": "Write UTF-8 text to a file under /workspace, /agent, or /logs, creating directories if needed. Relative paths resolve from the agent's folder.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -280,13 +332,13 @@ def tool_definitions(include_delegate: bool) -> List[Dict[str, Any]]:
         {
             "type": "function",
             "name": "list_dir",
-            "description": "List files and directories under /workspace, /agent, or /logs.",
+            "description": "List files and directories under /workspace, /agent, or /logs. Relative paths resolve from the agent's folder.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Directory path to list. Defaults to /workspace.",
+                        "description": "Directory path to list. Defaults to the agent's folder under /workspace.",
                     }
                 },
             },
@@ -577,15 +629,19 @@ def dispatch_tool(
     verbose: bool,
 ) -> Dict[str, Any]:
     if name == "run_shell":
-        return run_shell(args["command"], args.get("cwd"))
+        cwd = resolve_agent_path(agent, args.get("cwd"))
+        return run_shell(args["command"], cwd)
     if name == "run_python":
         return run_python(args["code"])
     if name == "read_file":
-        return read_file(args["path"])
+        path = resolve_agent_path(agent, args["path"])
+        return read_file(path)
     if name == "write_file":
-        return write_file(args["path"], args["content"])
+        path = resolve_agent_path(agent, args["path"])
+        return write_file(path, args["content"])
     if name == "list_dir":
-        return list_dir(args.get("path"))
+        path = resolve_agent_path(agent, args.get("path"))
+        return list_dir(path)
     if name == "http_request":
         return http_request(
             method=args["method"],
@@ -612,6 +668,7 @@ def dispatch_tool(
             return {"error": "Captain is missing a folder."}
         if not is_within_parent(agent.folder_path, normalized_folder):
             return {"error": "Folder must be the same as or a sub-folder of the parent folder."}
+        new_worker = False
         if agent_name in agents:
             worker = agents[agent_name]
             if worker.role != "worker":
@@ -623,22 +680,26 @@ def dispatch_tool(
         else:
             worker = AgentState(name=agent_name, role="worker")
             agents[agent_name] = worker
+            new_worker = True
+
+        if worker.folder_path is None:
+            worker.folder_path = normalized_folder
+        if new_worker:
             log_event(
                 "agent_created",
                 {
                     "agent": worker.name,
                     "created_by": agent.name,
-                    "folder": worker.folder_path or ".",
+                    "folder": worker.folder_path,
                     "role": worker.role,
                 },
             )
-
-        if worker.folder_path is None:
-            worker.folder_path = normalized_folder
         if worker.folder_skill is None:
             try:
                 worker.folder_skill = load_folder_skill(worker.folder_path)
             except Exception as exc:
+                if new_worker:
+                    del agents[agent_name]
                 return {"error": str(exc)}
             worker.skill_name = extract_frontmatter_name(worker.folder_skill) or worker.folder_path
             log_event(

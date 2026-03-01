@@ -63,7 +63,8 @@ GET http://localhost:8090/agents
 
 - The captain is bound to the root `/workspace` folder.
 - Each agent is bound to a folder (relative to `/workspace`) and loads that folder's `SKILL.md` on startup.
-- The agent scans only the first-level subfolders and reads the YAML frontmatter `description` from each child `SKILL.md` to build an overview.
+- The agent does not scan subfolders for skills; it only uses the `SKILL.md` in its assigned folder.
+- When a skill specifies compatibility requirements or setup steps, the agent must follow the setup instructions before executing tasks.
 - Sub-agents are assigned to the same folder as the parent or a subfolder under it.
 
 ## Logs
