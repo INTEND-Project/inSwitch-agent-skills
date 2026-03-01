@@ -238,3 +238,6 @@ logs/
 
 # Agent secrets
 agent/openai.credential
+
+# Helm charts (local, not to be committed)
+**/service_helm_charts/
