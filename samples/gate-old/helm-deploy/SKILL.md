@@ -80,27 +80,27 @@ Operates on a local chart directory or a chart name in a repo.
 
 Show everything (chart metadata + default values + README):
 ```bash
-helm show all service_helm_charts/<chart-name>
+helm show all <PATH>/<chart-name>
 ```
 
 Show only the chart definition (`Chart.yaml`):
 ```bash
-helm show chart service_helm_charts/<chart-name>
+helm show chart <PATH>/<chart-name>
 ```
 
 Show only the default values (`values.yaml`):
 ```bash
-helm show values service_helm_charts/<chart-name>
+helm show values <PATH>/<chart-name>
 ```
 
 Show only the README:
 ```bash
-helm show readme service_helm_charts/<chart-name>
+helm show readme <PATH>/<chart-name>
 ```
 
 Show CRD definitions bundled with the chart:
 ```bash
-helm show crds service_helm_charts/<chart-name>
+helm show crds <PATH>/<chart-name>
 ```
 
 ---
@@ -109,17 +109,17 @@ helm show crds service_helm_charts/<chart-name>
 
 List dependencies declared in `Chart.yaml` for a local chart:
 ```bash
-helm dependency list service_helm_charts/<chart-name>
+helm dependency list <PATH>/<chart-name>
 ```
 
 Download/update dependencies into the chart's `charts/` directory:
 ```bash
-helm dependency update service_helm_charts/<chart-name>
+helm dependency update <PATH>/<chart-name>
 ```
 
 Rebuild the `charts/` directory from `Chart.lock` (uses pinned versions):
 ```bash
-helm dependency build service_helm_charts/<chart-name>
+helm dependency build <PATH>/<chart-name>
 ```
 
 > Run `dependency update` or `dependency build` before linting or installing a chart that has dependencies, otherwise Helm will report missing sub-charts.
@@ -130,22 +130,22 @@ helm dependency build service_helm_charts/<chart-name>
 
 Run the linter against a local chart:
 ```bash
-helm lint service_helm_charts/<chart-name>
+helm lint <PATH>/<chart-name>
 ```
 
 Treat warnings as errors (stricter check):
 ```bash
-helm lint --strict service_helm_charts/<chart-name>
+helm lint --strict <PATH>/<chart-name>
 ```
 
 Lint with a custom values file:
 ```bash
-helm lint -f my-values.yaml service_helm_charts/<chart-name>
+helm lint -f my-values.yaml <PATH>/<chart-name>
 ```
 
 Lint including sub-charts:
 ```bash
-helm lint --with-subcharts service_helm_charts/<chart-name>
+helm lint --with-subcharts <PATH>/<chart-name>
 ```
 
 Output interpretation:
@@ -159,10 +159,10 @@ Output interpretation:
 When a user asks about a smart city service, follow this sequence:
 
 1. `helm list -A` — confirm whether a release is already deployed and its current status.
-2. `helm show chart service_helm_charts/<chart>` — check the chart version and description.
-3. `helm show values service_helm_charts/<chart>` — review configurable parameters.
-4. `helm dependency list service_helm_charts/<chart>` — check if sub-charts are present.
-5. `helm lint service_helm_charts/<chart>` — validate before any further action.
+2. `helm show chart <PATH>/<chart>` — check the chart version and description.
+3. `helm show values <PATH>/<chart>` — review configurable parameters.
+4. `helm dependency list <PATH>/<chart>` — check if sub-charts are present.
+5. `helm lint <PATH>/<chart>` — validate before any further action.
 
 ---
 

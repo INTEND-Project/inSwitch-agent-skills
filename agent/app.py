@@ -490,6 +490,41 @@ class AgentManager:
         return self.agents["captain"]
 
 
+def create_clean_captain() -> AgentState:
+    return AgentState(name="captain", role="captain", folder_path=".")
+
+
+def restart_agent_session(manager: AgentManager, triggered_by: str) -> Dict[str, Any]:
+    killed_agents = sorted(manager.agents.keys())
+    for agent_name in killed_agents:
+        log_event(
+            "agent_killed",
+            {
+                "agent": agent_name,
+                "killed_by": triggered_by,
+                "reason": "restart",
+            },
+        )
+    manager.agents.clear()
+    manager.agents["captain"] = create_clean_captain()
+    log_event(
+        "agent_created",
+        {
+            "agent": "captain",
+            "created_by": triggered_by,
+            "reason": "restart",
+        },
+    )
+    log_event(
+        "session_restarted",
+        {
+            "triggered_by": triggered_by,
+            "killed_agents": killed_agents,
+        },
+    )
+    return {"killed_agents": killed_agents}
+
+
 def is_within_parent(parent_folder: str, child_folder: str) -> bool:
     parent_abs = resolve_folder_abs(parent_folder)
     child_abs = resolve_folder_abs(child_folder)
@@ -741,6 +776,11 @@ def dispatch_tool(
 
 
 def process_user_input(manager: AgentManager, user_input: str) -> str:
+    if user_input == ":restart":
+        restart_result = restart_agent_session(manager, triggered_by="api")
+        killed_agents = ", ".join(restart_result["killed_agents"])
+        return f"Restarted agent session. Killed agents: {killed_agents}. Created clean captain."
+
     captain = manager.captain()
     if captain.folder_path is None:
         captain.folder_path = "."
@@ -902,9 +942,7 @@ def main() -> None:
         sys.exit(1)
 
     client = OpenAI(api_key=api_key)
-    agents: Dict[str, AgentState] = {
-        "captain": AgentState(name="captain", role="captain", folder_path=".")
-    }
+    agents: Dict[str, AgentState] = {"captain": create_clean_captain()}
     manager = AgentManager(client=client, agents=agents, verbose=VERBOSE_DEFAULT)
 
     if args.http:
@@ -933,7 +971,7 @@ def main() -> None:
             print("Bye.")
             break
         if user_input == ":help":
-            print("Commands: :help, :skills, :agents, :kill <agent>, :verbose, :exit")
+            print("Commands: :help, :skills, :agents, :kill <agent>, :restart, :verbose, :exit")
             continue
         if user_input == ":skills":
             print(list_folder_overview("."))
@@ -965,6 +1003,11 @@ def main() -> None:
         if user_input == ":verbose":
             manager.verbose = not manager.verbose
             print(f"Verbose mode: {'on' if manager.verbose else 'off'}")
+            continue
+        if user_input == ":restart":
+            restart_result = restart_agent_session(manager, triggered_by="user")
+            killed_agents = ", ".join(restart_result["killed_agents"])
+            print(f"Restarted agent session. Killed agents: {killed_agents}. Created clean captain.")
             continue
 
         text = process_user_input(manager, user_input)

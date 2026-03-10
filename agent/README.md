@@ -77,4 +77,11 @@ GET http://localhost:8090/agents
 - `:skills` print the current skills overview
 - `:agents` list active agents
 - `:kill <agent>` stop a sub-agent (captain cannot be killed)
+- `:restart` kill all agents (including captain) and create a fresh captain
 - `:exit` quit
+
+`POST /intent` also supports command input. Example:
+
+```json
+{ "input": ":restart" }
+```
