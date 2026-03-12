@@ -8,9 +8,13 @@ description: Execute intent-driven service operations in k8s_manager. Main flow 
 Execute service-management intents directly using the `k8s_manager` HTTP API.
 
 Do not generate code for the user. Execute the workflow.
+When a predefined function exists (those functions will be listed below), import and use it instead of directly calling the API.
 
-**Testing** The API is currently at `http://test-api:8001`, this override any API endpoint mentioned in the API reference. 
+DEBUG mode is OFF! 
 
+These environment variables are set for you as default choices: "KAFKA_SOURCE_OBJECT_IN_ZONE_DETECTION_BOOTSTRAP_SERVER":"10.2.0.163:29092","KAFKA_SOURCE_OBJECT_SPEEDS_BOOTSTRAP_SERVER":"10.2.0.163:29092","KAFKA_DEST_BOOTSTRAP_SERVER":"10.2.0.163:29092",
+"KAFKA_SCHEMA_REGISTRY_URL":"http://10.2.0.164:8081"
+"OSEF_SOURCE":"tcp://192.168.2.10"
 
 ## Capabilities
 
@@ -19,10 +23,94 @@ Understand natural-language intent and choose one capability:
   - `Show Running Services` inspect deployed instances according to the user's intent
   - `Inspect Deployable Services`: inspect deployable services, and show the information relevant to the user's intent
 
+## Predefined Python Utilities
 
+Use these functions from `/workspace/script/util.py` whenever applicable. These functions will be used by the generated Python code. Do not try to read this python file directly.
+
+Import example:
+```python
+import sys
+sys.path.append("/workspace/script")
+
+from util import get_deployable_services_basic
+from util import get_service_env_schema
+from util import is_service_deployed
+```
+
+### `get_deployable_services_basic(service_endpoint: str) -> dict`
+
+Purpose:
+- Fetch all deployable services from `GET /info/services`.
+- Return only `name`, `description`, and `dependencies` for each service.
+
+Input:
+- `service_endpoint` (example: `http://host.docker.internal:8001`)
+
+Output JSON shape:
+```json
+{
+  "services": [
+    {
+      "name": "service-a",
+      "description": "Service description",
+      "dependencies": ["service-b"]
+    }
+  ],
+  "total": 1
+}
+```
+
+Rule:
+- If this function satisfies the current need, use it instead of issuing direct API calls in ad-hoc Python code.
+
+### `get_service_env_schema(service_endpoint: str, service_name: str) -> dict`
+
+Purpose:
+- Fetch env schema for one service from `GET /info/services`.
+- Return `required_env_vars` and `optional_env_vars` for that service.
+
+Input:
+- `service_endpoint`
+- `service_name`
+
+Output JSON shape:
+```json
+{
+  "name": "service-a",
+  "required_env_vars": [],
+  "optional_env_vars": []
+}
+```
+
+### `is_service_deployed(service_endpoint: str, expected: dict) -> dict`
+
+Purpose:
+- Check whether at least one deployed instance matches all expected env var values.
+
+Input JSON shape:
+```json
+{
+  "service_name": "service-a",
+  "env_vars": {
+    "KEY_1": "value1"
+  }
+}
+```
+
+Status lookup:
+- Uses `/status/name=<service_name>` first.
+- Falls back to query-based variants if needed.
+
+Output JSON shape:
+```json
+{
+  "service_name": "service-a",
+  "is_deployed": true,
+  "matched_instance": {}
+}
+```
 
 ## Workflows by Capability
-
 
 ### Capability: Deploy Services (Main)
 
@@ -31,22 +119,19 @@ Inputs:
 - Optional user-provided env hints (key/value pairs)
 - `node_name: string | null` (optional)
 
+Keep the feedbacks to the user concise.
 
 Workflow:
-1. Call `GET /info/services` but extract only service names, dependencies, and descriptions. Do not keep or return the full payload.
-3. Select one or more initial services based on the relevance between user intent and service descriptions.
-4. If no clear match, stop and ask user to clarify.
-8. Start DFS from each initial service root. For each node:
-  - Build env plan: Call `GET /info/services`, but only extract the object for this service, and return the required and optional envs. Then, use this metadata to fill the env values based on the user intents. Use known default values if not possible to guess from the intent.
-  - Get a running instance with env values: Call `GET /status?name={service_name}`.
-  - If already satisfied (service name matches, and every env variable value matches), skip the service.
-  - If not satisfied, add the current service to `to_deploy` in post-order, and put its dependencies into the unsolved stack
-12. Merge all DFS roots into one ordered, deduplicated plan.
-13. Show to-be-deployed lists, then ask: `Proceed with deployment? (yes/no)`.
-14. Do not continue unless user reply is affirmative.
-15. If confirmed, deploy each service in order using `POST /instances`.
-16. After each create, poll `GET /status/{instance_name}` until ready or timeout.
-17. Stop on first failure and return partial results.
+1. Call `get_deployable_services_basic(service_endpoint)` from `/workspace/script/util.py` to get service names, descriptions, and dependencies.
+3. Select one or more initial services based on the relevance between user intent and service descriptions. If no clear match, stop and ask user to clarify. Select only the essential services. Show the list of initial services, then ask user to confirm before proceeding.
+4. Start DFS from each initial service root. For each node:
+  - Build env plan: Call `get_service_env_schema(service_endpoint, service_name)` from `/workspace/script/util.py`, then use the metadata to fill env values based on user intent, defaults, and common sense. If key required env values are not resolvable, ask user to provide them before proceeding.
+  - Find a running instance for the service and expected env values: Call `is_service_deployed(service_endpoint, expected)` from `/workspace/script/util.py`. Only include the essentional variables into the expected dict - ignore those with default values, those you are not certain about, and those related to `KAFKA`. If an instance is found, skip this service. Otherwise, add the current service to `to_deploy` in post-order, and put its dependencies into the unsolved stack
+6. Show to-be-deployed lists, then ask: `Proceed with deployment? (yes/no)`.
+8. If confirmed, deploy each service in order using `POST /instances`.
+9. Stop on first failure and return partial results.
+
+If DEBUG mode is ON: stop at step 3 to show inital services, at each iteration of DFS to show current node, env plan, and satisfiability check result, and ask users to continue.
 
 Determinism rules:
 1. Sort dependency names alphabetically before traversal.
@@ -93,7 +178,7 @@ Output:
 ### Capability: List Deployable Services
 
 Workflow:
-1. Call `GET /info/services`.
+1. Call `get_deployable_services_basic(service_endpoint)` from `/workspace/script/util.py`.
 2. Return concise per-service catalog:
    - `name`
    - `description`
@@ -173,7 +258,7 @@ Relevant response fields:
 - `instances[].env
 - `total`
 
-#### `GET /status?service_name={service_name}`
+#### `GET /status?name={service_name}`
 
 Get the status instances filtered by service name. Useful for pre-checking if an instance with matching env already exists.
 
@@ -194,3 +279,7 @@ Example:
   }
 }
 ```
+
+##### `DELETE /instances/{instance_name}`
+
+Delete a service instance by name

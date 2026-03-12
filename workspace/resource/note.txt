@@ -1,6 +1,0 @@
-tsh login --proxy=teleport.gate-ai.eu:443 --user=hui.song
-tsh kube login intend
-kubectl get pods
-kubectl port-forward k8s-manager-877b5896-q97ht 8001:8000
-
-I want to deploy services so that I can check if people cross walk zone C1_N safely.
