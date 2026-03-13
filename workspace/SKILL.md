@@ -124,12 +124,14 @@ Keep the feedbacks to the user concise.
 Workflow:
 1. Call `get_deployable_services_basic(service_endpoint)` from `/workspace/script/util.py` to get service names, descriptions, and dependencies.
 3. Select one or more initial services based on the relevance between user intent and service descriptions. If no clear match, stop and ask user to clarify. Select only the essential services. Show the list of initial services, then ask user to confirm before proceeding.
-4. Start DFS from each initial service root. For each node:
+4. Resolve the dependency graph and generate a list of services. For each of these services:
   - Build env plan: Call `get_service_env_schema(service_endpoint, service_name)` from `/workspace/script/util.py`, then use the metadata to fill env values based on user intent, defaults, and common sense. If key required env values are not resolvable, ask user to provide them before proceeding.
-  - Find a running instance for the service and expected env values: Call `is_service_deployed(service_endpoint, expected)` from `/workspace/script/util.py`. Only include the essentional variables into the expected dict - ignore those with default values, those you are not certain about, and those related to `KAFKA`. If an instance is found, skip this service. Otherwise, add the current service to `to_deploy` in post-order, and put its dependencies into the unsolved stack
-6. Show to-be-deployed lists, then ask: `Proceed with deployment? (yes/no)`.
-8. If confirmed, deploy each service in order using `POST /instances`.
-9. Stop on first failure and return partial results.
+  - Show the deployment plan (in a concise way), and ask user to confirm continue. 
+5. For each service in the generated list, check if an instance with matching env is already deployed:
+  - Find a running instance for the service and expected env values: Call `is_service_deployed(service_endpoint, expected)` from `/workspace/script/util.py`. Only include the essentional variables into the expected dict - ignore those with default values, those you are not certain about, and those related to `KAFKA`. If no instance is found, add the current service to `to_deploy` in post-order.
+6. Show to-be-deployed lists, then ask: `Proceed with deployment? (yes/no)`. Again, ignore KAFKA-related env vars in the confirmation step.
+7. If confirmed, deploy each service in order using `POST /instances`.
+8. Stop on first failure and return partial results.
 
 If DEBUG mode is ON: stop at step 3 to show inital services, at each iteration of DFS to show current node, env plan, and satisfiability check result, and ask users to continue.
 
@@ -283,3 +285,15 @@ Example:
 ##### `DELETE /instances/{instance_name}`
 
 Delete a service instance by name
+
+
+## What we already know:
+
+- Skip the variable checks for lidar-osef-data-streamer, osef-tracked-objects, osef-zones, because they are always deployed with default variables. Tell the users that they are deployed, and do not need to be re-deployed.
+- No need to show or check env vars related to `KAFKA` in the env resolution or user confirmation steps, but use default values for these variables when actual deploy the services.
+- All object types supported: "TRUCK","CAR","TWO-WHEELER","UNKNOWN", "PERSON". For pedestrian, use "PERSON".
+- if service `object-in-zone-detection` is recently deployed by you, always consider re-deploy it with new variable values. If this is the case, tell the user you can re-deploy, and if confirmed, in addition to deploying the new one, remove the existing instance
+- no need to wait and check the deployment results, we have dedicated workflow for that. Just trigger the deployment and return. 
+- for intents involving pedistrian walking cross a zone, use object-in-zone-detection with `OBJECT_TYPE=PERSON`
+- use 6 m/s as default high-speed.
+
