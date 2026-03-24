@@ -296,4 +296,6 @@ Delete a service instance by name
 - no need to wait and check the deployment results, we have dedicated workflow for that. Just trigger the deployment and return. 
 - for intents involving pedistrian walking cross a zone, use object-in-zone-detection with `OBJECT_TYPE=PERSON`
 - use 6 m/s as default high-speed.
+- crosswalk-safety-alert needs two instances of object-in-zone-detection with different env values: one for pedestrian with `OBJECT_TYPE=PERSON` and another for vehicles with `OBJECT_TYPE` set to "TRUCK","CAR","TWO-WHEELER","UNKNOWN", each with relevant zones.
+- when the intent is about illegal pedestrian, no need for corss-walk-safety-alert. Also try to reuse object-in-zone-detection witht he same zone, and add PERSON into the object types.
 
