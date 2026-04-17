@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { prism } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import ReactFlow, {
   Background,
   Controls,
@@ -31,6 +34,35 @@ type GraphNodeData = {
 const buildNodeClass = (kind: GraphKind, highlighted?: boolean) =>
   `graph-node ${kind}${highlighted ? ' highlighted' : ''}`;
 
+const normalizeCodeLanguage = (className?: string) => {
+  const match = /language-([a-zA-Z0-9_-]+)/.exec(className ?? '');
+  if (!match) return null;
+  const lang = match[1].toLowerCase();
+  if (lang === 'py') return 'python';
+  if (lang === 'yml') return 'yaml';
+  return lang;
+};
+
+const detectCodeLanguage = (code: string) => {
+  const source = code.trim();
+  if (
+    source.includes('import urllib') ||
+    source.includes('def ') ||
+    source.includes('print(') ||
+    source.includes('json.loads(')
+  ) {
+    return 'python';
+  }
+  if (
+    source.includes('schema_version:') ||
+    source.includes('workloads:') ||
+    /\n\s*-\s+name:/.test(source)
+  ) {
+    return 'yaml';
+  }
+  return 'text';
+};
+
 const initialMessages: Message[] = [
   {
     id: 'welcome',
@@ -60,6 +92,54 @@ const App: React.FC = () => {
   const buildNodeId = useCallback((kind: GraphKind, name: string) => `${kind}:${name}`, []);
 
   const canSend = useMemo(() => input.trim().length > 0 && !isSending, [input, isSending]);
+
+  const renderMarkdown = useCallback(
+    (content: string, className: string) => (
+      <div className={className}>
+        <ReactMarkdown
+          components={{
+            code({ inline, className: codeClassName, children, ...props }: any) {
+              if (inline) {
+                return (
+                  <code className={codeClassName} {...props}>
+                    {children}
+                  </code>
+                );
+              }
+
+              const language = normalizeCodeLanguage(codeClassName);
+              const text = String(children).replace(/\n$/, '');
+
+              if (!language) {
+                return (
+                  <pre>
+                    <code className={codeClassName} {...props}>
+                      {children}
+                    </code>
+                  </pre>
+                );
+              }
+
+              return (
+                <SyntaxHighlighter
+                  PreTag="div"
+                  language={language}
+                  style={prism}
+                  wrapLongLines
+                  customStyle={{ margin: 0, borderRadius: '0.75rem', padding: '0.75rem 0.85rem' }}
+                >
+                  {text}
+                </SyntaxHighlighter>
+              );
+            }
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
+    ),
+    []
+  );
 
   const scrollToBottom = useCallback(() => {
     const node = listRef.current;
@@ -385,10 +465,55 @@ const App: React.FC = () => {
     }
   };
 
+  const isHttpEnvelope = (value: unknown): value is Record<string, unknown> => {
+    if (!value || typeof value !== 'object') return false;
+    const record = value as Record<string, unknown>;
+    return 'status_code' in record && 'headers' in record && 'body' in record;
+  };
+
+  const parseMaybeJsonString = (value: unknown): unknown => {
+    if (typeof value !== 'string') return value;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  };
+
+  const normalizeHttpEnvelope = (value: unknown) => {
+    if (!isHttpEnvelope(value)) return null;
+    const record = value as Record<string, unknown>;
+    const rawHeaders = record.headers;
+    const headers =
+      rawHeaders && typeof rawHeaders === 'object'
+        ? Object.entries(rawHeaders as Record<string, unknown>).reduce<Record<string, string>>(
+            (acc, [key, val]) => {
+              acc[key] = String(val);
+              return acc;
+            },
+            {}
+          )
+        : {};
+
+    return {
+      statusCode: String(record.status_code ?? ''),
+      headers,
+      body: parseMaybeJsonString(record.body)
+    };
+  };
+
+  const getStatusTone = (statusCode: string) => {
+    const code = Number.parseInt(statusCode, 10);
+    if (Number.isNaN(code)) return 'neutral';
+    if (code >= 400) return 'error';
+    if (code >= 300) return 'warn';
+    return 'ok';
+  };
+
   const parseJsonValue = (value: unknown) => {
     if (typeof value === 'string') {
       try {
-        return { type: 'json' as const, data: JSON.parse(value) };
+        return parseJsonValue(JSON.parse(value));
       } catch {
         return { type: 'plain' as const, text: value };
       }
@@ -417,33 +542,130 @@ const App: React.FC = () => {
     );
   };
 
+  const renderJsonViewer = (data: unknown) => {
+    const pretty = safeStringify(data, 2);
+    if (!pretty) return null;
+    const highlighted = highlightJson(pretty);
+    const lines = highlighted.split('\n');
+    return (
+      <div className="json-viewer">
+        {lines.map((line, idx) => (
+          <div key={idx} className="json-line">
+            <span className="json-line-no">{idx + 1}</span>
+            <span
+              className="json-line-code"
+              dangerouslySetInnerHTML={{ __html: line.length === 0 ? '&nbsp;' : line }}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderStructuredResult = (data: unknown) => {
+    if (!data || typeof data !== 'object') return null;
+    const record = data as Record<string, unknown>;
+    if (typeof record.code !== 'string') return null;
+
+    const language = detectCodeLanguage(record.code);
+    const rest = { ...record };
+    delete rest.code;
+    const hasRest = Object.keys(rest).length > 0;
+
+    return (
+      <div className="structured-result">
+        <div className="structured-result-header">Code</div>
+        <SyntaxHighlighter
+          PreTag="div"
+          language={language}
+          style={prism}
+          wrapLongLines
+          customStyle={{ margin: 0, borderRadius: '0.8rem', padding: '0.85rem 0.95rem' }}
+        >
+          {record.code}
+        </SyntaxHighlighter>
+        {hasRest && (
+          <div className="structured-result-meta">
+            <div className="structured-result-header">Metadata</div>
+            {renderJsonViewer(rest)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderCommandOutput = (data: unknown) => {
+    if (!data || typeof data !== 'object') return null;
+    const record = data as Record<string, unknown>;
+    const hasStdout = typeof record.stdout === 'string';
+    const hasStderr = typeof record.stderr === 'string';
+    const hasExitCode = typeof record.exit_code === 'number' || typeof record.exit_code === 'string';
+    if (!hasStdout && !hasStderr && !hasExitCode) return null;
+
+    return (
+      <div className="command-result">
+        {hasExitCode && (
+          <div className="command-result-header">
+            Exit code:{' '}
+            <span className={`command-exit ${String(record.exit_code) === '0' ? 'ok' : 'error'}`}>
+              {String(record.exit_code)}
+            </span>
+          </div>
+        )}
+        {hasStdout && (record.stdout as string).length > 0 && (
+          <div className="command-block">
+            <div className="command-label">stdout</div>
+            <pre className="command-output">{record.stdout as string}</pre>
+          </div>
+        )}
+        {hasStderr && (record.stderr as string).length > 0 && (
+          <div className="command-block command-block-error">
+            <div className="command-label">stderr</div>
+            <pre className="command-output">{record.stderr as string}</pre>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderValueDetails = (value: unknown) => {
+    const envelope = normalizeHttpEnvelope(value);
+    if (envelope) {
+      const contentType = envelope.headers['content-type'];
+      const date = envelope.headers.date;
+      const tone = getStatusTone(envelope.statusCode);
+      return (
+        <div className="http-envelope-view">
+          <div className="http-envelope-meta">
+            <span className={`http-meta-pill http-meta-pill-${tone}`}>
+              HTTP {envelope.statusCode || 'unknown'}
+            </span>
+            {contentType && <span className="http-meta-pill">{contentType}</span>}
+            {date && <span className="http-meta-pill">{date}</span>}
+          </div>
+          <div className="http-envelope-body">{renderValueDetails(envelope.body)}</div>
+        </div>
+      );
+    }
+
     const parsed = parseJsonValue(value);
     if (parsed.type === 'json') {
-      const pretty = safeStringify(parsed.data, 2);
-      if (pretty) {
-        const highlighted = highlightJson(pretty);
-        const lines = highlighted.split('\n');
-        return (
-          <div className="json-viewer">
-            {lines.map((line, idx) => (
-              <div key={idx} className="json-line">
-                <span className="json-line-no">{idx + 1}</span>
-                <span
-                  className="json-line-code"
-                  dangerouslySetInnerHTML={{ __html: line.length === 0 ? '&nbsp;' : line }}
-                />
-              </div>
-            ))}
-          </div>
-        );
+      const structured = renderStructuredResult(parsed.data);
+      if (structured) {
+        return structured;
+      }
+      const commandOutput = renderCommandOutput(parsed.data);
+      if (commandOutput) {
+        return commandOutput;
+      }
+      const jsonViewer = renderJsonViewer(parsed.data);
+      if (jsonViewer) {
+        return jsonViewer;
       }
     }
 
     return (
-      <pre className="log-plain-value">
-        {parsed.type === 'plain' ? parsed.text : String(value)}
-      </pre>
+      renderMarkdown(parsed.type === 'plain' ? parsed.text : String(value), 'markdown-content modal-markdown-content')
     );
   };
 
@@ -470,26 +692,76 @@ const App: React.FC = () => {
     delete params.event;
     delete params.ts;
 
-    const formatValue = (value: any) => {
+    const classifyParam = (key: string) => {
+      const normalized = key.toLowerCase();
+      if (normalized === 'agent' || normalized === 'from' || normalized === 'to' || normalized === 'created_by') {
+        return 'agent';
+      }
+      if (normalized === 'tool') {
+        return 'tool';
+      }
+      if (normalized === 'skill') {
+        return 'skill';
+      }
+      return 'default';
+    };
+
+    const formatValue = (value: any, key: string) => {
       const previewLimit = 18;
-      if (value === null || value === undefined) {
-        return { display: String(value), raw: value, truncated: false };
+      const envelope = normalizeHttpEnvelope(parseMaybeJsonString(value));
+      if (envelope) {
+        const contentType = envelope.headers['content-type'];
+        const tone = getStatusTone(envelope.statusCode);
+        return {
+          display: contentType ? `${envelope.statusCode} ${contentType}` : envelope.statusCode,
+          raw: parseMaybeJsonString(value),
+          truncated: false,
+          expandable: true,
+          tone
+        };
       }
-      if (typeof value === 'string') {
-        if (value.length > previewLimit) {
-          return { display: value.slice(0, previewLimit), raw: value, truncated: true };
+
+      const parsed = parseJsonValue(value);
+      const displayValue = parsed.type === 'json' ? parsed.data : parsed.text;
+
+      if (displayValue === null || displayValue === undefined) {
+        return {
+          display: String(displayValue),
+          raw: displayValue,
+          truncated: false,
+          expandable: false,
+          tone: 'neutral'
+        };
+      }
+      if (typeof displayValue === 'string') {
+        const isErrorField = key.toLowerCase().includes('error');
+        const tone = isErrorField && displayValue.trim().length > 0 ? 'error' : 'neutral';
+        if (displayValue.length > previewLimit) {
+          return {
+            display: displayValue.slice(0, previewLimit),
+            raw: displayValue,
+            truncated: true,
+            expandable: false,
+            tone
+          };
         }
-        return { display: value, raw: value, truncated: false };
+        return { display: displayValue, raw: displayValue, truncated: false, expandable: false, tone };
       }
-      if (typeof value === 'object') {
-        const json = safeStringify(value) ?? String(value);
+      if (typeof displayValue === 'object') {
+        const json = safeStringify(displayValue) ?? String(displayValue);
         if (json.length > previewLimit) {
-          return { display: json.slice(0, previewLimit), raw: value, truncated: true };
+          return {
+            display: json.slice(0, previewLimit),
+            raw: displayValue,
+            truncated: true,
+            expandable: false,
+            tone: 'neutral'
+          };
         }
-        return { display: json, raw: value, truncated: false };
+        return { display: json, raw: displayValue, truncated: false, expandable: false, tone: 'neutral' };
       }
-      const text = String(value);
-      return { display: text, raw: value, truncated: false };
+      const text = String(displayValue);
+      return { display: text, raw: displayValue, truncated: false, expandable: false, tone: 'neutral' };
     };
 
     return (
@@ -500,17 +772,17 @@ const App: React.FC = () => {
         </div>
         <div className="log-params">
           {Object.entries(params).map(([key, value]) => {
-            const formatted = formatValue(value);
+            const formatted = formatValue(value, key);
             const content = (
-              <span className="log-value">
+              <span className={`log-value ${formatted.tone === 'error' ? 'log-value-error' : ''}`}>
                 {formatted.display}
                 {formatted.truncated && <span className="log-ellipsis">…</span>}
               </span>
             );
             return (
-              <span key={key} className="log-param">
+              <span key={key} className={`log-param log-param-${classifyParam(key)}`}>
                 <span className="log-key">{key}:</span>
-                {formatted.truncated ? (
+                {formatted.truncated || formatted.expandable ? (
                   <button
                     type="button"
                     className="log-value-button"
@@ -549,7 +821,9 @@ const App: React.FC = () => {
           <div className="panel-header">
             <div>
               <p className="panel-title">Agent Logs</p>
-              <p className="panel-subtitle">Live stream from /logs/stream</p>
+              <p className="panel-subtitle">
+                Live stream from /logs/stream. Agent = green, Tool = blue, Skill = amber.
+              </p>
             </div>
             <div className={`log-status ${logStatus}`}>
               <span className="status-dot" />
@@ -571,7 +845,11 @@ const App: React.FC = () => {
               {messages.map((message) => (
                 <div key={message.id} className={`message-row ${message.role}`}>
                   <div className="message-bubble">
-                    <p>{message.text}</p>
+                    {message.role === 'agent' ? (
+                      renderMarkdown(message.text, 'markdown-content message-markdown-content')
+                    ) : (
+                      <p>{message.text}</p>
+                    )}
                   </div>
                 </div>
               ))}
