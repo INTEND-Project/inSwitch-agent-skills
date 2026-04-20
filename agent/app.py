@@ -927,7 +927,7 @@ class AgentHTTPRequestHandler(BaseHTTPRequestHandler):
             response_text = process_user_input(self.manager, user_input.strip())
             handle.set("response.length", len(response_text))
 
-        self._send_json(200, {"response": response_text})
+        self._send_json(200, {"response": response_text, "trace_id": handle.trace_id})
 
     def do_GET(self) -> None:
         if self.path == "/skills":

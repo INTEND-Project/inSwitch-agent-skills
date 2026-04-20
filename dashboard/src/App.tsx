@@ -13,14 +13,20 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import logo from './assets/intend-black.svg';
+import ObservabilityView from './components/observability/ObservabilityView';
 
-const API_URL = 'http://localhost:8085/intent';
-const LOG_STREAM_URL = 'http://localhost:8085/logs/stream';
+const configuredBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+const AGENT_BASE = configuredBase && configuredBase.length > 0
+  ? configuredBase.replace(/\/+$/, '')
+  : 'http://localhost:8085';
+const API_URL = `${AGENT_BASE}/intent`;
+const LOG_STREAM_URL = `${AGENT_BASE}/logs/stream`;
 
 type Message = {
   id: string;
   role: 'user' | 'agent' | 'system';
   text: string;
+  traceId?: string;
 };
 
 type GraphKind = 'agent' | 'skill' | 'tool';
@@ -71,7 +77,12 @@ const initialMessages: Message[] = [
   }
 ];
 
+const isObservabilityPath = (pathname: string) => pathname.startsWith('/observability');
+
 const App: React.FC = () => {
+  const [activeView, setActiveView] = useState<'chat' | 'observability'>(() =>
+    isObservabilityPath(window.location.pathname) ? 'observability' : 'chat'
+  );
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -89,6 +100,7 @@ const App: React.FC = () => {
   const nodeTimers = useRef<Map<string, number>>(new Map());
   const edgeTimers = useRef<Map<string, number>>(new Map());
   const nodeIndex = useRef(0);
+  const lastObservabilityPath = useRef('/observability');
   const buildNodeId = useCallback((kind: GraphKind, name: string) => `${kind}:${name}`, []);
 
   const canSend = useMemo(() => input.trim().length > 0 && !isSending, [input, isSending]);
@@ -159,6 +171,24 @@ const App: React.FC = () => {
 
   useEffect(() => {
     inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const syncFromLocation = () => {
+      const path = window.location.pathname;
+      if (isObservabilityPath(path)) {
+        lastObservabilityPath.current = path;
+        setActiveView('observability');
+      } else {
+        setActiveView('chat');
+      }
+    };
+
+    syncFromLocation();
+    window.addEventListener('popstate', syncFromLocation);
+    return () => {
+      window.removeEventListener('popstate', syncFromLocation);
+    };
   }, []);
 
   useEffect(() => {
@@ -429,17 +459,18 @@ const App: React.FC = () => {
         throw new Error(`Request failed (${response.status})`);
       }
 
-      const json = (await response.json()) as { response?: string };
+      const json = (await response.json()) as { response?: string; trace_id?: string };
       const agentText = json.response ?? 'No response received.';
 
       pushMessage({
         id: `agent-${Date.now()}`,
         role: 'agent',
-        text: agentText
+        text: agentText,
+        traceId: typeof json.trace_id === 'string' ? json.trace_id : undefined
       });
     } catch (err) {
       console.error(err);
-      setError('Unable to reach the agent. Check that the backend is running on :8085.');
+      setError('Unable to reach the agent. Check API host configuration and backend availability.');
       pushMessage({
         id: `error-${Date.now()}`,
         role: 'system',
@@ -522,6 +553,33 @@ const App: React.FC = () => {
       return { type: 'json' as const, data: value };
     }
     return { type: 'plain' as const, text: String(value) };
+  };
+
+  const navigateMainView = (nextView: 'chat' | 'observability') => {
+    if (nextView === 'chat') {
+      if (window.location.pathname !== '/') {
+        window.history.pushState({}, '', '/');
+      }
+      setActiveView('chat');
+      return;
+    }
+
+    const nextPath = isObservabilityPath(lastObservabilityPath.current)
+      ? lastObservabilityPath.current
+      : '/observability';
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, '', nextPath);
+    }
+    setActiveView('observability');
+  };
+
+  const openTraceDetailFromChat = (traceId: string) => {
+    const path = `/observability/traces/${encodeURIComponent(traceId)}`;
+    lastObservabilityPath.current = path;
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+    }
+    setActiveView('observability');
   };
 
   const highlightJson = (json: string) => {
@@ -809,6 +867,26 @@ const App: React.FC = () => {
             <img src={logo} alt="inSwitch logo" className="chat-logo" />
             <p className="chat-title">inSwitch Agent</p>
           </div>
+          <div className="top-tabs" role="tablist" aria-label="Main views">
+            <button
+              type="button"
+              role="tab"
+              className={`top-tab ${activeView === 'chat' ? 'active' : ''}`}
+              aria-selected={activeView === 'chat'}
+              onClick={() => navigateMainView('chat')}
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={`top-tab ${activeView === 'observability' ? 'active' : ''}`}
+              aria-selected={activeView === 'observability'}
+              onClick={() => navigateMainView('observability')}
+            >
+              Observability
+            </button>
+          </div>
         </div>
         <div className="status-pill">
           <span className={`status-dot ${isSending ? 'busy' : 'ready'}`} />
@@ -816,92 +894,111 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="chat-panels">
-        <section className="panel logs-panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-title">Agent Logs</p>
-              <p className="panel-subtitle">
-                Live stream from /logs/stream. Agent = green, Tool = blue, Skill = amber.
-              </p>
+      {activeView === 'chat' ? (
+        <main className="chat-panels">
+          <section className="panel logs-panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-title">Agent Logs</p>
+                <p className="panel-subtitle">
+                  Live stream from /logs/stream. Agent = green, Tool = blue, Skill = amber.
+                </p>
+              </div>
+              <div className={`log-status ${logStatus}`}>
+                <span className="status-dot" />
+                {logStatus === 'connected' ? 'Live' : 'Reconnecting'}
+              </div>
             </div>
-            <div className={`log-status ${logStatus}`}>
-              <span className="status-dot" />
-              {logStatus === 'connected' ? 'Live' : 'Reconnecting'}
+            <div className="log-list" ref={logListRef}>
+              {logs.length === 0 ? (
+                <p className="empty-state">Waiting for log events…</p>
+              ) : (
+                logs.map(renderLogEntry)
+              )}
             </div>
-          </div>
-          <div className="log-list" ref={logListRef}>
-            {logs.length === 0 ? (
-              <p className="empty-state">Waiting for log events…</p>
-            ) : (
-              logs.map(renderLogEntry)
-            )}
-          </div>
-        </section>
-
-        <div className="chat-column">
-          <section className="panel chat-panel">
-            <div className="message-list" ref={listRef}>
-              {messages.map((message) => (
-                <div key={message.id} className={`message-row ${message.role}`}>
-                  <div className="message-bubble">
-                    {message.role === 'agent' ? (
-                      renderMarkdown(message.text, 'markdown-content message-markdown-content')
-                    ) : (
-                      <p>{message.text}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            {error && <div className="error-banner">{error}</div>}
           </section>
 
-          <footer className="chat-input">
-            <div className="input-shell">
-              <textarea
-                ref={inputRef}
-                placeholder="Type a message…"
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={handleKeyDown}
-                rows={1}
-              />
-              <button
-                type="button"
-                className="send-button"
-                onClick={sendMessage}
-                disabled={!canSend}
+          <div className="chat-column">
+            <section className="panel chat-panel">
+              <div className="message-list" ref={listRef}>
+                {messages.map((message) => (
+                  <div key={message.id} className={`message-row ${message.role}`}>
+                    <div className="message-bubble">
+                      {message.role === 'agent' ? (
+                        <>
+                          {renderMarkdown(message.text, 'markdown-content message-markdown-content')}
+                          {message.traceId && (
+                            <button
+                              type="button"
+                              className="trace-detail-link"
+                              onClick={() => openTraceDetailFromChat(message.traceId)}
+                            >
+                              View Trace Detail
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <p>{message.text}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {error && <div className="error-banner">{error}</div>}
+            </section>
+
+            <footer className="chat-input">
+              <div className="input-shell">
+                <textarea
+                  ref={inputRef}
+                  placeholder="Type a message…"
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={handleKeyDown}
+                  rows={1}
+                />
+                <button
+                  type="button"
+                  className="send-button"
+                  onClick={sendMessage}
+                  disabled={!canSend}
+                >
+                  Send
+                </button>
+              </div>
+            </footer>
+          </div>
+
+          <section className="panel graph-panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-title">Agent Graph</p>
+              </div>
+            </div>
+            <div className="graph-canvas">
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                fitView
               >
-                Send
-              </button>
+                <MiniMap />
+                <Controls />
+                <Background gap={18} size={1} />
+              </ReactFlow>
             </div>
-          </footer>
-        </div>
+          </section>
+        </main>
+      ) : (
+        <ObservabilityView
+          onPathChange={(path) => {
+            lastObservabilityPath.current = path;
+          }}
+        />
+      )}
 
-        <section className="panel graph-panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-title">Agent Graph</p>
-            </div>
-          </div>
-          <div className="graph-canvas">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              fitView
-            >
-              <MiniMap />
-              <Controls />
-              <Background gap={18} size={1} />
-            </ReactFlow>
-          </div>
-        </section>
-      </main>
-
-      {selectedValue !== null && (
+      {activeView === 'chat' && selectedValue !== null && (
         <div className="log-modal-overlay" onClick={() => setSelectedValue(null)}>
           <div className="log-modal" onClick={(event) => event.stopPropagation()}>
             <div className="log-modal-header">

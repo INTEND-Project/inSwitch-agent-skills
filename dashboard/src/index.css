@@ -71,6 +71,29 @@ body {
   font-size: 0.9rem;
 }
 
+.top-tabs {
+  margin-top: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.top-tab {
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: rgba(241, 245, 249, 0.9);
+  color: #0f172a;
+  border-radius: 0.7rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.top-tab.active {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -664,6 +687,23 @@ body {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.trace-detail-link {
+  margin-top: 0.6rem;
+  border: 1px solid #f9a8d4;
+  background: #fce7f3;
+  color: #831843;
+  border-radius: 0.65rem;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trace-detail-link:hover {
+  background: #fbcfe8;
+  border-color: #f472b6;
 }
 
 .markdown-content {
