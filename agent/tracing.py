@@ -141,11 +141,13 @@ class _SpanHandle:
     failure (e.g., the tool returned an error dict rather than raising).
     """
 
-    __slots__ = ("attrs", "status")
+    __slots__ = ("attrs", "status", "trace_id", "span_id")
 
-    def __init__(self, attrs: Dict[str, Any]):
+    def __init__(self, attrs: Dict[str, Any], trace_id: str, span_id: str):
         self.attrs: Dict[str, Any] = attrs
         self.status: str = "ok"
+        self.trace_id: str = trace_id
+        self.span_id: str = span_id
 
     def set(self, key: str, value: Any) -> None:
         self.attrs[key] = value
@@ -198,7 +200,7 @@ def start_span(
         implicit_trace = True
 
     span_token = _current_span.set(span_id)
-    handle = _SpanHandle(dict(attrs or {}))
+    handle = _SpanHandle(dict(attrs or {}), trace_id=trace_id, span_id=span_id)
 
     start_perf = time.perf_counter()
     start_ts = time.time()
