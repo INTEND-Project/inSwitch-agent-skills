@@ -13,6 +13,14 @@ from typing import Any, Dict, List, Optional
 import requests
 from openai import OpenAI
 
+from tracing import (
+    start_trace,
+    start_span,
+    compute_llm_cost,
+    init_db as init_traces_db,
+)
+from trace_api import handle_trace_request
+
 CODE_DIR = os.getenv("AGENT_CODE_DIR", "/agent")
 WORKSPACE_DIR = os.getenv("AGENT_WORKSPACE_DIR", "/workspace")
 LOGS_DIR = os.getenv("AGENT_LOGS_DIR", "/logs")
@@ -470,6 +478,7 @@ def http_request(
         "body": response.text,
     }
 
+
 @dataclass
 class AgentState:
     name: str
@@ -570,16 +579,32 @@ def run_agent_turn(
         )
         tools = tool_definitions(include_delegate=False)
 
-    try:
-        response = client.responses.create(
-            model=MODEL,
-            input=[{"role": "user", "content": user_input}],
-            instructions=system_prompt,
-            tools=tools,
-            previous_response_id=agent.last_response_id,
-        )
-    except Exception as exc:
-        return f"Error: OpenAI request failed: {exc}"
+    # First LLM call for this turn
+    with start_span("gen_ai.chat", {
+        "gen_ai.request.model": MODEL,
+        "agent.name": agent.name,
+        "agent.role": agent.role,
+    }) as span:
+        try:
+            response = client.responses.create(
+                model=MODEL,
+                input=[{"role": "user", "content": user_input}],
+                instructions=system_prompt,
+                tools=tools,
+                previous_response_id=agent.last_response_id,
+            )
+        except Exception as exc:
+            span.mark_error(f"OpenAI request failed: {exc}")
+            return f"Error: OpenAI request failed: {exc}"
+
+        if getattr(response, "usage", None):
+            span.update({
+                "gen_ai.usage.input_tokens": response.usage.input_tokens,
+                "gen_ai.usage.output_tokens": response.usage.output_tokens,
+                "gen_ai.usage.cost_usd": compute_llm_cost(MODEL, response.usage),
+                "gen_ai.response_id": getattr(response, "id", None),
+                "gen_ai.request_id": getattr(response, "_request_id", None),
+            })
 
     while True:
         tool_calls = extract_tool_calls(response)
@@ -590,6 +615,7 @@ def run_agent_turn(
             call_id = getattr(call, "call_id", None) or getattr(call, "id", None)
             if not call_id:
                 continue
+            tool_name = getattr(call, "name", "")
             try:
                 args = json.loads(getattr(call, "arguments", "") or "{}")
             except json.JSONDecodeError:
@@ -598,30 +624,41 @@ def run_agent_turn(
                 "tool_invocation",
                 {
                     "agent": agent.name,
-                    "tool": getattr(call, "name", ""),
+                    "tool": tool_name,
                     "args": args,
                 },
             )
             if verbose:
-                print(f"\n[{agent.name} tool] {getattr(call, 'name', '')} args={args}")
-            try:
-                result = dispatch_tool(
-                    getattr(call, "name", ""),
-                    args,
-                    agent=agent,
-                    agents=agents,
-                    client=client,
-                    folder_overview=folder_overview,
-                    folder_skill=folder_skill,
-                    verbose=verbose,
-                )
-            except Exception as exc:
-                result = {"error": str(exc)}
+                print(f"\n[{agent.name} tool] {tool_name} args={args}")
+
+            # Span per tool call
+            with start_span("tool.call", {
+                "tool.name": tool_name,
+                "agent.name": agent.name,
+            }) as tool_span:
+                try:
+                    result = dispatch_tool(
+                        tool_name,
+                        args,
+                        agent=agent,
+                        agents=agents,
+                        client=client,
+                        folder_overview=folder_overview,
+                        folder_skill=folder_skill,
+                        verbose=verbose,
+                    )
+                except Exception as exc:
+                    result = {"error": str(exc)}
+                    tool_span.mark_error(str(exc))
+
+                if isinstance(result, dict) and "error" in result:
+                    tool_span.mark_error(str(result["error"]))
+
             log_event(
                 "tool_result",
                 {
                     "agent": agent.name,
-                    "tool": getattr(call, "name", ""),
+                    "tool": tool_name,
                     "result": result,
                 },
             )
@@ -637,16 +674,34 @@ def run_agent_turn(
                     "output": json.dumps(result),
                 }
             )
-        try:
-            response = client.responses.create(
-                model=MODEL,
-                input=tool_outputs,
-                instructions=system_prompt,
-                tools=tools,
-                previous_response_id=response.id,
-            )
-        except Exception as exc:
-            return f"Error: OpenAI follow-up failed: {exc}"
+
+        # Follow-up LLM call with tool outputs
+        with start_span("gen_ai.chat", {
+            "gen_ai.request.model": MODEL,
+            "agent.name": agent.name,
+            "agent.role": agent.role,
+            "gen_ai.turn_kind": "tool_followup",
+        }) as span:
+            try:
+                response = client.responses.create(
+                    model=MODEL,
+                    input=tool_outputs,
+                    instructions=system_prompt,
+                    tools=tools,
+                    previous_response_id=response.id,
+                )
+            except Exception as exc:
+                span.mark_error(f"OpenAI follow-up failed: {exc}")
+                return f"Error: OpenAI follow-up failed: {exc}"
+
+            if getattr(response, "usage", None):
+                span.update({
+                    "gen_ai.usage.input_tokens": response.usage.input_tokens,
+                    "gen_ai.usage.output_tokens": response.usage.output_tokens,
+                    "gen_ai.usage.cost_usd": compute_llm_cost(MODEL, response.usage),
+                    "gen_ai.response_id": getattr(response, "id", None),
+                    "gen_ai.request_id": getattr(response, "_request_id", None),
+                })
 
     agent.last_response_id = response.id
     return extract_text(response) or "(no response)"
@@ -753,15 +808,26 @@ def dispatch_tool(
                 "content": task,
             },
         )
-        response_text = run_agent_turn(
-            client=client,
-            agent=worker,
-            user_input=task,
-            folder_overview=list_folder_overview(worker.folder_path),
-            folder_skill=worker.folder_skill or "",
-            agents=agents,
-            verbose=verbose,
-        )
+
+        # Span the sub-agent turn so its internal spans nest under it.
+        # This is the critical step that makes the trace tree reflect
+        # the captain -> delegate -> worker hierarchy.
+        with start_span("agent.turn", {
+            "agent.name": worker.name,
+            "agent.role": "worker",
+            "agent.skill": worker.skill_name or "",
+            "agent.folder": worker.folder_path or "",
+            "delegated_by": agent.name,
+        }):
+            response_text = run_agent_turn(
+                client=client,
+                agent=worker,
+                user_input=task,
+                folder_overview=list_folder_overview(worker.folder_path),
+                folder_skill=worker.folder_skill or "",
+                agents=agents,
+                verbose=verbose,
+            )
         log_event(
             "agent_message",
             {
@@ -852,7 +918,15 @@ class AgentHTTPRequestHandler(BaseHTTPRequestHandler):
         if not isinstance(user_input, str) or not user_input.strip():
             self._send_json(400, {"error": "Missing 'input' string."})
             return
-        response_text = process_user_input(self.manager, user_input.strip())
+
+        # Wrap the whole request in a root trace so every span created
+        # during processing attaches underneath.
+        with start_trace("agent.request", {
+            "intent.text": user_input.strip()[:200],
+        }) as handle:
+            response_text = process_user_input(self.manager, user_input.strip())
+            handle.set("response.length", len(response_text))
+
         self._send_json(200, {"response": response_text})
 
     def do_GET(self) -> None:
@@ -865,6 +939,11 @@ class AgentHTTPRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/logs/stream":
             self._handle_log_stream()
             return
+
+        # Mount /traces, /traces/{id}, /metrics/summary
+        if handle_trace_request(self.path, lambda code, body: self._send_json(code, body)):
+            return
+
         self._send_json(404, {"error": "Not found."})
 
     def _handle_log_stream(self) -> None:
@@ -941,6 +1020,12 @@ def main() -> None:
         print("Set the OPENAI_API_KEY environment variable before starting the container.")
         sys.exit(1)
 
+    # Initialize the tracing SQLite schema (idempotent).
+    try:
+        init_traces_db()
+    except Exception as exc:
+        print(f"Warning: could not initialize traces DB: {exc}")
+
     client = OpenAI(api_key=api_key)
     agents: Dict[str, AgentState] = {"captain": create_clean_captain()}
     manager = AgentManager(client=client, agents=agents, verbose=VERBOSE_DEFAULT)
@@ -1010,7 +1095,14 @@ def main() -> None:
             print(f"Restarted agent session. Killed agents: {killed_agents}. Created clean captain.")
             continue
 
-        text = process_user_input(manager, user_input)
+        # CLI interactive mode: wrap each input in a root trace too.
+        with start_trace("agent.request", {
+            "intent.text": user_input[:200],
+            "source": "cli",
+        }) as handle:
+            text = process_user_input(manager, user_input)
+            handle.set("response.length", len(text or ""))
+
         print(text or "(no response)")
 
 
