@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { prism } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { getTrace, TraceSpan } from "../../api/tracing";
+import { useCurrency } from "../../hooks/useCurrency";
+import { formatCurrency } from "../../utils/currency";
 
 type TraceDetailViewProps = {
   traceId: string | null;
@@ -35,8 +37,6 @@ const formatDuration = (durationMs: number) => {
   if (durationMs > 1000) return `${(durationMs / 1000).toFixed(1)}s`;
   return `${Math.round(durationMs)}ms`;
 };
-
-const formatUsd = (value: number) => `$${value.toFixed(4)}`;
 
 const getBarToneClass = (name: string, status: "ok" | "error") => {
   if (name.startsWith("gen_ai."))
@@ -140,6 +140,7 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
   traceId,
   onBackToTraces,
 }) => {
+  const { currency, rates } = useCurrency();
   const [spans, setSpans] = useState<WaterfallSpan[]>([]);
   const [rawSpans, setRawSpans] = useState<TraceSpan[]>([]);
   const [stats, setStats] = useState<TraceStats>({
@@ -325,7 +326,7 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
             <article className="trace-summary-item">
               <span className="trace-summary-label">Total cost</span>
               <span className="trace-summary-value">
-                {formatUsd(stats.totalCostUsd)}
+                {formatCurrency(stats.totalCostUsd, currency, rates)}
               </span>
             </article>
             <article className="trace-summary-item">
