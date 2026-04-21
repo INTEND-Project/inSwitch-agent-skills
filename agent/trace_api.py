@@ -5,15 +5,18 @@ Plug into the existing HTTP server in app.py by calling
     handle_trace_request(path, query, send_json)
 from the `do_GET` method when the path starts with /traces or /metrics.
 
-Three endpoints:
+Endpoints:
     GET /traces                    -> paginated list of recent traces
     GET /traces/{trace_id}         -> full span tree for one trace
     GET /metrics/summary           -> aggregates over a time window
+    GET /metrics/timeseries        -> bucketed aggregates over a fixed window
 """
 
 import json
+import math
 import os
 import sqlite3
+import time
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
@@ -232,6 +235,152 @@ def metrics_summary(since_ts: Optional[float] = None) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# GET /metrics/timeseries  -> bucketed aggregates over fixed windows
+# ---------------------------------------------------------------------------
+
+_WINDOW_SECONDS: Dict[str, int] = {
+    "24h": 24 * 3600,
+    "7d": 7 * 24 * 3600,
+    "30d": 30 * 24 * 3600,
+}
+
+_BUCKET_SECONDS: Dict[str, int] = {
+    "hour": 3600,
+    "day": 24 * 3600,
+}
+
+_DEFAULT_BUCKET_BY_WINDOW: Dict[str, str] = {
+    "24h": "hour",
+    "7d": "hour",
+    "30d": "day",
+}
+
+
+def _percentile_95(values: List[float]) -> Optional[float]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = math.ceil(0.95 * len(ordered))
+    idx = max(rank - 1, 0)
+    return float(ordered[idx])
+
+
+def metrics_timeseries(
+    window: str = "24h",
+    bucket: Optional[str] = None,
+    now_ts: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Return bucketed metrics aligned to UTC hour/day boundaries.
+
+    Supported windows: 24h, 7d, 30d
+    Supported buckets: hour, day
+    """
+    if window not in _WINDOW_SECONDS:
+        raise ValueError("Invalid window. Use one of: 24h, 7d, 30d")
+
+    if bucket is None:
+        bucket = _DEFAULT_BUCKET_BY_WINDOW[window]
+    if bucket not in _BUCKET_SECONDS:
+        raise ValueError("Invalid bucket. Use one of: hour, day")
+
+    window_seconds = _WINDOW_SECONDS[window]
+    bucket_seconds = _BUCKET_SECONDS[bucket]
+    if window_seconds % bucket_seconds != 0:
+        raise ValueError("Window and bucket combination is not aligned")
+
+    now_value = now_ts if now_ts is not None else time.time()
+    until_ts = int(now_value // bucket_seconds) * bucket_seconds
+    since_ts = until_ts - window_seconds
+    point_count = window_seconds // bucket_seconds
+
+    bucket_data: Dict[int, Dict[str, Any]] = {}
+    for i in range(point_count):
+        bucket_start = since_ts + (i * bucket_seconds)
+        bucket_data[bucket_start] = {
+            "bucket_start_ts": bucket_start,
+            "trace_count": 0,
+            "total_cost_usd": 0.0,
+            "success_count": 0,
+            "error_count": 0,
+            "durations_ms": [],
+        }
+
+    conn = _connect()
+    try:
+        # Root spans map to "trace" metrics (count/status/latency).
+        root_rows = conn.execute(
+            "SELECT start_ts, duration_ms, status FROM spans "
+            "WHERE parent_span_id IS NULL AND start_ts >= ? AND start_ts < ?",
+            (since_ts, until_ts),
+        ).fetchall()
+        for row in root_rows:
+            bucket_start = since_ts + (
+                int((row["start_ts"] - since_ts) // bucket_seconds) * bucket_seconds
+            )
+            if bucket_start not in bucket_data:
+                continue
+            entry = bucket_data[bucket_start]
+            entry["trace_count"] += 1
+            if row["status"] == "ok":
+                entry["success_count"] += 1
+            else:
+                entry["error_count"] += 1
+            if row["duration_ms"] is not None:
+                entry["durations_ms"].append(float(row["duration_ms"]))
+
+        # Cost aligns with the same source as /metrics/summary.
+        cost_rows = conn.execute(
+            "SELECT start_ts, attributes_json FROM spans "
+            "WHERE name = 'gen_ai.chat' AND start_ts >= ? AND start_ts < ?",
+            (since_ts, until_ts),
+        ).fetchall()
+        for row in cost_rows:
+            bucket_start = since_ts + (
+                int((row["start_ts"] - since_ts) // bucket_seconds) * bucket_seconds
+            )
+            if bucket_start not in bucket_data:
+                continue
+            try:
+                attrs = json.loads(row["attributes_json"] or "{}")
+                cost = float(attrs.get("gen_ai.usage.cost_usd", 0) or 0)
+                bucket_data[bucket_start]["total_cost_usd"] += cost
+            except (json.JSONDecodeError, ValueError):
+                pass
+    finally:
+        conn.close()
+
+    points: List[Dict[str, Any]] = []
+    for i in range(point_count):
+        bucket_start = since_ts + (i * bucket_seconds)
+        entry = bucket_data[bucket_start]
+        durations = entry.pop("durations_ms")
+        trace_count = entry["trace_count"]
+        if trace_count == 0:
+            avg_duration_ms = None
+            p95_duration_ms = None
+        else:
+            avg_duration_ms = sum(durations) / trace_count
+            p95_duration_ms = _percentile_95(durations)
+        points.append({
+            "bucket_start_ts": entry["bucket_start_ts"],
+            "trace_count": trace_count,
+            "total_cost_usd": round(entry["total_cost_usd"], 6),
+            "avg_duration_ms": avg_duration_ms,
+            "p95_duration_ms": p95_duration_ms,
+            "success_count": entry["success_count"],
+            "error_count": entry["error_count"],
+        })
+
+    return {
+        "window": window,
+        "bucket": bucket,
+        "since_ts": since_ts,
+        "until_ts": until_ts,
+        "points": points,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Request dispatcher — wire this into your existing do_GET
 # ---------------------------------------------------------------------------
 
@@ -275,6 +424,16 @@ def handle_trace_request(
         since = query.get("since_ts", [None])[0]
         since_ts = float(since) if since else None
         send_json(200, metrics_summary(since_ts=since_ts))
+        return True
+
+    # GET /metrics/timeseries
+    if parsed.path == "/metrics/timeseries":
+        window = query.get("window", ["24h"])[0]
+        bucket = query.get("bucket", [None])[0]
+        try:
+            send_json(200, metrics_timeseries(window=window, bucket=bucket))
+        except ValueError as exc:
+            send_json(400, {"error": str(exc)})
         return True
 
     return False

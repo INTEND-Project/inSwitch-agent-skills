@@ -940,7 +940,7 @@ class AgentHTTPRequestHandler(BaseHTTPRequestHandler):
             self._handle_log_stream()
             return
 
-        # Mount /traces, /traces/{id}, /metrics/summary
+        # Mount /traces, /traces/{id}, /metrics/summary, /metrics/timeseries
         if handle_trace_request(self.path, lambda code, body: self._send_json(code, body)):
             return
 
