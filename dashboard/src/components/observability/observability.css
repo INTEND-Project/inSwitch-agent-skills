@@ -398,6 +398,44 @@
   gap: 0.55rem;
 }
 
+.span-attributes-toggle {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: #475569;
+  border-radius: 0.35rem;
+  padding: 0.1rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.span-attributes-toggle:hover {
+  color: #0f172a;
+  background: rgba(241, 245, 249, 0.9);
+}
+
+.span-attributes-toggle:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.35);
+  outline-offset: 1px;
+}
+
+.span-toggle-arrow {
+  display: inline-block;
+  transform-origin: center;
+  transition: transform 120ms ease, color 120ms ease;
+  font-weight: 600;
+}
+
+.span-toggle-arrow.is-expanded {
+  transform: rotate(90deg);
+}
+
 .waterfall-name {
   font-size: 0.86rem;
   color: #0f172a;
@@ -410,19 +448,6 @@
   font-size: 0.8rem;
   color: #475569;
   flex-shrink: 0;
-}
-
-.span-attributes-hint {
-  color: #94a3b8;
-  font-size: 0.72rem;
-  opacity: 0;
-  transition: opacity 120ms ease;
-  margin-left: auto;
-}
-
-.waterfall-span-wrap:hover .span-attributes-hint,
-.waterfall-span-wrap:focus-within .span-attributes-hint {
-  opacity: 1;
 }
 
 .span-attributes-panel {
@@ -579,7 +604,7 @@
     gap: 0.15rem;
   }
 
-  .span-attributes-hint {
-    opacity: 1;
+  .span-attributes-toggle {
+    margin-left: 0;
   }
 }
