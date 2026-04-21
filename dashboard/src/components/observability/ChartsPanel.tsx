@@ -244,7 +244,7 @@ const ChartsPanel: React.FC<ChartsPanelProps> = ({ window }) => {
               dataKey="avg_duration_ms"
               stroke={BRAND_CYAN}
               strokeWidth={2}
-              dot={false}
+              dot={{ r: 3 }}
               connectNulls={false}
               isAnimationActive={false}
             />
@@ -253,7 +253,7 @@ const ChartsPanel: React.FC<ChartsPanelProps> = ({ window }) => {
               dataKey="p95_duration_ms"
               stroke={BRAND_MAGENTA}
               strokeWidth={2}
-              dot={false}
+              dot={{ r: 3 }}
               connectNulls={false}
               isAnimationActive={false}
             />
