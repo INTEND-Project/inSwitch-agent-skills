@@ -128,6 +128,14 @@ const renderAttributes = (attributes: Record<string, unknown>) => {
   );
 };
 
+const formatUpdatedAt = (timestampMs: number) =>
+  new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(timestampMs));
+
 const TraceDetailView: React.FC<TraceDetailViewProps> = ({
   traceId,
   onBackToTraces,
@@ -144,6 +152,7 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
+  const [updatedAtMs, setUpdatedAtMs] = useState<number | null>(null);
 
   const loadTrace = useCallback(
     async (force = false) => {
@@ -152,6 +161,7 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
         setRawSpans([]);
         setExpandedSpanId(null);
         setError(null);
+        setUpdatedAtMs(null);
         setStats({
           totalDurationMs: 0,
           totalCostUsd: 0,
@@ -169,6 +179,7 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
         setSpans(cached.spans);
         setRawSpans(cached.rawSpans);
         setStats(cached.stats);
+        setUpdatedAtMs(cached.fetchedAt);
         setError(null);
         setIsLoading(false);
         return;
@@ -215,16 +226,18 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
         });
 
         const computedStats = buildStats(sorted);
+        const fetchedAt = Date.now();
 
         traceCache.set(traceId, {
           spans: withGeometry,
           rawSpans: sorted,
           stats: computedStats,
-          fetchedAt: Date.now(),
+          fetchedAt,
         });
         setRawSpans(sorted);
         setSpans(withGeometry);
         setStats(computedStats);
+        setUpdatedAtMs(fetchedAt);
       } catch (err) {
         console.error(err);
         setError(
@@ -274,12 +287,19 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
             Back to traces
           </button>
           <h3>Trace Detail</h3>
+          {updatedAtMs !== null && (
+            <span className="observability-updated-at">
+              Updated {formatUpdatedAt(updatedAtMs)}
+            </span>
+          )}
         </div>
         <button
           type="button"
           className="observability-action"
           onClick={() => void loadTrace(true)}
           disabled={isLoading}
+          title="Force refresh"
+          aria-label="Force refresh"
         >
           {isLoading ? "Refreshing…" : "Refresh"}
         </button>

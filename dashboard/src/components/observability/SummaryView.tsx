@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { getMetricsSummary, MetricsSummaryResponse } from '../../api/tracing';
+import usePolledFetch from '../../hooks/usePolledFetch';
 
 type SummaryViewProps = {
   onOpenTraces: () => void;
@@ -19,10 +20,19 @@ const formatAvgDuration = (durationMs: number) => {
   return `${Math.round(durationMs)} ms`;
 };
 
+const formatUpdatedAt = (timestampMs: number) =>
+  new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(new Date(timestampMs));
+
 const SummaryView: React.FC<SummaryViewProps> = ({ onOpenTraces }) => {
   const [data, setData] = useState<MetricsSummaryResponse | null>(summaryCache?.data ?? null);
   const [isLoading, setIsLoading] = useState(!summaryCache);
   const [error, setError] = useState<string | null>(null);
+  const [updatedAtMs, setUpdatedAtMs] = useState<number | null>(summaryCache?.fetchedAt ?? null);
 
   const loadSummary = useCallback(async (force = false) => {
     const hasFreshCache =
@@ -30,6 +40,7 @@ const SummaryView: React.FC<SummaryViewProps> = ({ onOpenTraces }) => {
 
     if (hasFreshCache && summaryCache) {
       setData(summaryCache.data);
+      setUpdatedAtMs(summaryCache.fetchedAt);
       setError(null);
       setIsLoading(false);
       return;
@@ -39,8 +50,10 @@ const SummaryView: React.FC<SummaryViewProps> = ({ onOpenTraces }) => {
     setError(null);
     try {
       const result = await getMetricsSummary();
-      summaryCache = { data: result, fetchedAt: Date.now() };
+      const fetchedAt = Date.now();
+      summaryCache = { data: result, fetchedAt };
       setData(result);
+      setUpdatedAtMs(fetchedAt);
     } catch (err) {
       console.error(err);
       setError('Unable to load summary metrics. Check API host configuration and backend availability.');
@@ -49,19 +62,30 @@ const SummaryView: React.FC<SummaryViewProps> = ({ onOpenTraces }) => {
     }
   }, []);
 
+  const { runNow } = usePolledFetch(() => loadSummary(false), 15_000);
+
   useEffect(() => {
-    void loadSummary(false);
-  }, [loadSummary]);
+    void runNow();
+  }, [runNow]);
 
   return (
     <div className="observability-summary">
       <div className="observability-summary-header">
-        <h3>Summary</h3>
+        <div className="observability-header-title-wrap">
+          <h3>Summary</h3>
+          {updatedAtMs !== null && (
+            <span className="observability-updated-at">
+              Updated {formatUpdatedAt(updatedAtMs)}
+            </span>
+          )}
+        </div>
         <button
           type="button"
           className="observability-action"
-          onClick={() => void loadSummary(true)}
+          onClick={() => void runNow(() => loadSummary(true))}
           disabled={isLoading}
+          title="Force refresh"
+          aria-label="Force refresh"
         >
           {isLoading ? 'Refreshing…' : 'Refresh'}
         </button>

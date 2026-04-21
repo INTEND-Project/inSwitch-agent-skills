@@ -89,6 +89,18 @@
   font-family: 'Space Grotesk', sans-serif;
 }
 
+.observability-header-title-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.observability-updated-at {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
 .observability-summary-header .observability-action {
   margin-top: 0;
 }
