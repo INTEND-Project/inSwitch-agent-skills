@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { listTraces, TraceListItem } from '../../api/tracing';
+import usePolledFetch from '../../hooks/usePolledFetch';
 
 type TracesListViewProps = {
   onOpenTrace: (traceId: string) => void;
@@ -47,6 +48,14 @@ const truncateIntent = (intent: string, max = 50) => {
   return `${intent.slice(0, max - 1)}…`;
 };
 
+const formatUpdatedAt = (timestampMs: number) =>
+  new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(new Date(timestampMs));
+
 const compareTraces = (a: TraceListItem, b: TraceListItem, key: SortKey): number => {
   if (key === 'intent_text') return a.intent_text.localeCompare(b.intent_text);
   if (key === 'status') return a.status.localeCompare(b.status);
@@ -62,12 +71,14 @@ const TracesListView: React.FC<TracesListViewProps> = ({ onOpenTrace }) => {
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('start_ts');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [updatedAtMs, setUpdatedAtMs] = useState<number | null>(tracesCache?.fetchedAt ?? null);
 
   const loadTraces = useCallback(async (force = false) => {
     const hasFreshCache = !force && tracesCache && Date.now() - tracesCache.fetchedAt < CACHE_TTL_MS;
 
     if (hasFreshCache && tracesCache) {
       setTraces(tracesCache.data);
+      setUpdatedAtMs(tracesCache.fetchedAt);
       setError(null);
       setIsLoading(false);
       return;
@@ -77,8 +88,10 @@ const TracesListView: React.FC<TracesListViewProps> = ({ onOpenTrace }) => {
     setError(null);
     try {
       const result = await listTraces(50, 0);
-      tracesCache = { data: result.traces, fetchedAt: Date.now() };
+      const fetchedAt = Date.now();
+      tracesCache = { data: result.traces, fetchedAt };
       setTraces(result.traces);
+      setUpdatedAtMs(fetchedAt);
     } catch (err) {
       console.error(err);
       setError('Unable to load traces. Check API host configuration and backend availability.');
@@ -87,9 +100,11 @@ const TracesListView: React.FC<TracesListViewProps> = ({ onOpenTrace }) => {
     }
   }, []);
 
+  const { runNow } = usePolledFetch(() => loadTraces(false), 15_000);
+
   useEffect(() => {
-    void loadTraces(false);
-  }, [loadTraces]);
+    void runNow();
+  }, [runNow]);
 
   const sortedTraces = useMemo(() => {
     const next = [...traces];
@@ -117,12 +132,21 @@ const TracesListView: React.FC<TracesListViewProps> = ({ onOpenTrace }) => {
   return (
     <div className="observability-summary">
       <div className="observability-summary-header">
-        <h3>Traces</h3>
+        <div className="observability-header-title-wrap">
+          <h3>Traces</h3>
+          {updatedAtMs !== null && (
+            <span className="observability-updated-at">
+              Updated {formatUpdatedAt(updatedAtMs)}
+            </span>
+          )}
+        </div>
         <button
           type="button"
           className="observability-action"
-          onClick={() => void loadTraces(true)}
+          onClick={() => void runNow(() => loadTraces(true))}
           disabled={isLoading}
+          title="Force refresh"
+          aria-label="Force refresh"
         >
           {isLoading ? 'Refreshing…' : 'Refresh'}
         </button>

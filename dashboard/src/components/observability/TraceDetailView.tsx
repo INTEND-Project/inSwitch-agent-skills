@@ -12,7 +12,6 @@ type WaterfallSpan = TraceSpan & {
   depth: number;
   leftPct: number;
   widthPct: number;
-  tooltip: string;
 };
 
 type TraceStats = {
@@ -38,14 +37,6 @@ const formatDuration = (durationMs: number) => {
 };
 
 const formatUsd = (value: number) => `$${value.toFixed(4)}`;
-
-const buildTooltip = (attributes: Record<string, unknown>) => {
-  const lines = Object.entries(attributes).map(([key, value]) => {
-    const text = typeof value === "string" ? value : JSON.stringify(value);
-    return `${key}: ${text}`;
-  });
-  return lines.length > 0 ? lines.join("\n") : "No attributes";
-};
 
 const getBarToneClass = (name: string, status: "ok" | "error") => {
   if (name.startsWith("gen_ai."))
@@ -137,6 +128,14 @@ const renderAttributes = (attributes: Record<string, unknown>) => {
   );
 };
 
+const formatUpdatedAt = (timestampMs: number) =>
+  new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(timestampMs));
+
 const TraceDetailView: React.FC<TraceDetailViewProps> = ({
   traceId,
   onBackToTraces,
@@ -149,17 +148,20 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
     llmCallCount: 0,
     toolCallCount: 0,
   });
-  const [activeSpanId, setActiveSpanId] = useState<string | null>(null);
+  const [expandedSpanId, setExpandedSpanId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
+  const [updatedAtMs, setUpdatedAtMs] = useState<number | null>(null);
 
   const loadTrace = useCallback(
     async (force = false) => {
       if (!traceId) {
         setSpans([]);
         setRawSpans([]);
+        setExpandedSpanId(null);
         setError(null);
+        setUpdatedAtMs(null);
         setStats({
           totalDurationMs: 0,
           totalCostUsd: 0,
@@ -177,6 +179,7 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
         setSpans(cached.spans);
         setRawSpans(cached.rawSpans);
         setStats(cached.stats);
+        setUpdatedAtMs(cached.fetchedAt);
         setError(null);
         setIsLoading(false);
         return;
@@ -219,21 +222,22 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
             depth,
             leftPct,
             widthPct,
-            tooltip: buildTooltip(span.attributes),
           };
         });
 
         const computedStats = buildStats(sorted);
+        const fetchedAt = Date.now();
 
         traceCache.set(traceId, {
           spans: withGeometry,
           rawSpans: sorted,
           stats: computedStats,
-          fetchedAt: Date.now(),
+          fetchedAt,
         });
         setRawSpans(sorted);
         setSpans(withGeometry);
         setStats(computedStats);
+        setUpdatedAtMs(fetchedAt);
       } catch (err) {
         console.error(err);
         setError(
@@ -256,7 +260,7 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
 
   useEffect(() => {
     setShowRaw(false);
-    setActiveSpanId(null);
+    setExpandedSpanId(null);
     void loadTrace(false);
   }, [loadTrace]);
 
@@ -283,12 +287,19 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
             Back to traces
           </button>
           <h3>Trace Detail</h3>
+          {updatedAtMs !== null && (
+            <span className="observability-updated-at">
+              Updated {formatUpdatedAt(updatedAtMs)}
+            </span>
+          )}
         </div>
         <button
           type="button"
           className="observability-action"
           onClick={() => void loadTrace(true)}
           disabled={isLoading}
+          title="Force refresh"
+          aria-label="Force refresh"
         >
           {isLoading ? "Refreshing…" : "Refresh"}
         </button>
@@ -354,18 +365,9 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
 
                 <div className="waterfall-list">
                   {spans.map((span) => {
-                    const isActive = activeSpanId === span.span_id;
+                    const isExpanded = expandedSpanId === span.span_id;
                     return (
-                      <div
-                        key={span.span_id}
-                        className="waterfall-span-wrap"
-                        onMouseEnter={() => setActiveSpanId(span.span_id)}
-                        onMouseLeave={() =>
-                          setActiveSpanId((prev) =>
-                            prev === span.span_id ? null : prev,
-                          )
-                        }
-                      >
+                      <div key={span.span_id} className="waterfall-span-wrap">
                         <div className="waterfall-row">
                           <div
                             className="waterfall-label"
@@ -375,9 +377,29 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
                             <span className="waterfall-duration">
                               {formatDuration(span.duration_ms)}
                             </span>
-                            <span className="span-attributes-hint">
-                              Attributes
-                            </span>
+                            <button
+                              type="button"
+                              className="span-attributes-toggle"
+                              onClick={() =>
+                                setExpandedSpanId((prev) =>
+                                  prev === span.span_id ? null : span.span_id,
+                                )
+                              }
+                              aria-label={
+                                isExpanded
+                                  ? "Collapse span attributes"
+                                  : "Expand span attributes"
+                              }
+                              aria-expanded={isExpanded}
+                              aria-controls={`span-attributes-${span.span_id}`}
+                            >
+                              <span
+                                className={`span-toggle-arrow ${isExpanded ? "is-expanded" : ""}`}
+                                aria-hidden="true"
+                              >
+                                ▸
+                              </span>
+                            </button>
                           </div>
                           <div className="waterfall-track">
                             <div
@@ -386,19 +408,14 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
                                 left: `${Math.max(0, Math.min(span.leftPct, 100))}%`,
                                 width: `${Math.max(Math.min(span.widthPct, 100), 0.35)}%`,
                               }}
-                              title={span.tooltip}
-                              tabIndex={0}
-                              onFocus={() => setActiveSpanId(span.span_id)}
-                              onBlur={() =>
-                                setActiveSpanId((prev) =>
-                                  prev === span.span_id ? null : prev,
-                                )
-                              }
                             />
                           </div>
                         </div>
-                        {isActive && (
-                          <div className="span-attributes-panel">
+                        {isExpanded && (
+                          <div
+                            className="span-attributes-panel"
+                            id={`span-attributes-${span.span_id}`}
+                          >
                             {renderAttributes(span.attributes)}
                           </div>
                         )}
