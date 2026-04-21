@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import SummaryView from './SummaryView';
 import TracesListView from './TracesListView';
 import TraceDetailView from './TraceDetailView';
+import { Currency, CURRENCIES } from '../../utils/currency';
+import { CurrencyProvider, useCurrency } from '../../hooks/useCurrency';
 import './observability.css';
 
 type ObservabilitySubView = 'summary' | 'list' | 'detail';
@@ -43,7 +45,8 @@ const parseRoute = (pathname: string): ObservabilityRoute => {
   return { subView: 'summary', traceId: null, path: '/observability' };
 };
 
-const ObservabilityView: React.FC<ObservabilityViewProps> = ({ onPathChange }) => {
+const ObservabilityViewContent: React.FC<ObservabilityViewProps> = ({ onPathChange }) => {
+  const { currency, setCurrency, ratesAvailable } = useCurrency();
   const [route, setRoute] = useState<ObservabilityRoute>(() => parseRoute(window.location.pathname));
 
   const syncWithLocation = useCallback(() => {
@@ -131,6 +134,23 @@ const ObservabilityView: React.FC<ObservabilityViewProps> = ({ onPathChange }) =
           >
             Detail
           </button>
+          <select
+            className="currency-selector"
+            value={currency}
+            onChange={(event) => setCurrency(event.target.value as Currency)}
+            title={!ratesAvailable ? 'Exchange rates unavailable' : undefined}
+            aria-label="Currency"
+          >
+            {CURRENCIES.map((entry) => (
+              <option
+                key={entry.code}
+                value={entry.code}
+                disabled={entry.code !== 'USD' && !ratesAvailable}
+              >
+                {entry.code}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="observability-content">
@@ -144,5 +164,11 @@ const ObservabilityView: React.FC<ObservabilityViewProps> = ({ onPathChange }) =
     </main>
   );
 };
+
+const ObservabilityView: React.FC<ObservabilityViewProps> = ({ onPathChange }) => (
+  <CurrencyProvider>
+    <ObservabilityViewContent onPathChange={onPathChange} />
+  </CurrencyProvider>
+);
 
 export default ObservabilityView;

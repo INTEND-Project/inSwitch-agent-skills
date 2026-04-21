@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { getMetricsSummary, MetricsSummaryResponse } from '../../api/tracing';
 import usePolledFetch from '../../hooks/usePolledFetch';
+import { useCurrency } from '../../hooks/useCurrency';
+import { formatCurrency } from '../../utils/currency';
 
 type SummaryViewProps = {
   onOpenTraces: () => void;
@@ -8,8 +10,6 @@ type SummaryViewProps = {
 
 const CACHE_TTL_MS = 10_000;
 let summaryCache: { data: MetricsSummaryResponse; fetchedAt: number } | null = null;
-
-const formatUsd = (value: number) => `$${value.toFixed(4)}`;
 
 const formatSuccessRate = (value: number) => `${(value * 100).toFixed(1)}%`;
 
@@ -29,6 +29,7 @@ const formatUpdatedAt = (timestampMs: number) =>
   }).format(new Date(timestampMs));
 
 const SummaryView: React.FC<SummaryViewProps> = ({ onOpenTraces }) => {
+  const { currency, rates } = useCurrency();
   const [data, setData] = useState<MetricsSummaryResponse | null>(summaryCache?.data ?? null);
   const [isLoading, setIsLoading] = useState(!summaryCache);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +100,7 @@ const SummaryView: React.FC<SummaryViewProps> = ({ onOpenTraces }) => {
           <div className="kpi-grid kpi-grid-main">
             <article className="kpi-card kpi-card-cost">
               <p className="kpi-label">Cost (24h)</p>
-              <p className="kpi-value">{formatUsd(data.total_cost_usd)}</p>
+              <p className="kpi-value">{formatCurrency(data.total_cost_usd, currency, rates)}</p>
             </article>
 
             <button

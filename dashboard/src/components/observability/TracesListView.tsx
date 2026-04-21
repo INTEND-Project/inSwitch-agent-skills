@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { listTraces, TraceListItem } from '../../api/tracing';
 import usePolledFetch from '../../hooks/usePolledFetch';
+import { useCurrency } from '../../hooks/useCurrency';
+import { formatCurrency } from '../../utils/currency';
 
 type TracesListViewProps = {
   onOpenTrace: (traceId: string) => void;
@@ -41,8 +43,6 @@ const formatDuration = (durationMs: number) => {
   return `${Math.round(durationMs)}ms`;
 };
 
-const formatCost = (cost: number) => `$${cost.toFixed(4)}`;
-
 const truncateIntent = (intent: string, max = 50) => {
   if (intent.length <= max) return intent;
   return `${intent.slice(0, max - 1)}…`;
@@ -66,6 +66,7 @@ const compareTraces = (a: TraceListItem, b: TraceListItem, key: SortKey): number
 };
 
 const TracesListView: React.FC<TracesListViewProps> = ({ onOpenTrace }) => {
+  const { currency, rates } = useCurrency();
   const [traces, setTraces] = useState<TraceListItem[]>(tracesCache?.data ?? []);
   const [isLoading, setIsLoading] = useState(!tracesCache);
   const [error, setError] = useState<string | null>(null);
@@ -224,7 +225,7 @@ const TracesListView: React.FC<TracesListViewProps> = ({ onOpenTrace }) => {
                     <td>{formatStartTime(trace.start_ts)}</td>
                     <td title={trace.intent_text}>{truncateIntent(trace.intent_text)}</td>
                     <td>{formatDuration(trace.duration_ms)}</td>
-                    <td>{formatCost(trace.total_cost_usd)}</td>
+                    <td>{formatCurrency(trace.total_cost_usd, currency, rates)}</td>
                     <td>{trace.llm_calls}</td>
                     <td>{trace.tool_calls}</td>
                     <td>
