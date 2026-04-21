@@ -348,10 +348,16 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
                 <div className="waterfall-ruler">
                   <div className="waterfall-ruler-label-cell" />
                   <div className="waterfall-ruler-track">
-                    {rulerMarks.map((mark) => (
+                    {rulerMarks.map((mark, index) => (
                       <div
                         key={mark.positionPct}
-                        className="waterfall-ruler-mark"
+                        className={`waterfall-ruler-mark ${
+                          index === 0
+                            ? "is-start"
+                            : index === rulerMarks.length - 1
+                              ? "is-end"
+                              : ""
+                        }`}
                         style={{ left: `${mark.positionPct}%` }}
                       >
                         <span className="waterfall-ruler-tick" />
@@ -448,6 +454,7 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
                   margin: 0,
                   borderRadius: "0.75rem",
                   padding: "0.75rem 0.85rem",
+                  background: "transparent",
                 }}
               >
                 {JSON.stringify(rawSpans, null, 2)}
