@@ -202,6 +202,141 @@
   line-height: 1.2;
 }
 
+.observability-charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.observability-chart-card {
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.7rem;
+  padding: 1rem;
+}
+
+.observability-chart-card h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.observability-chart-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 0.65rem;
+  font-size: 0.8rem;
+  color: #334155;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.legend-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-dot-cyan {
+  background: var(--brand-cyan, #14cad4);
+}
+
+.legend-dot-magenta {
+  background: var(--brand-magenta, #ff5aff);
+}
+
+.observability-charts-section {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.observability-charts-panel {
+  position: relative;
+}
+
+.observability-refresh-indicator {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.35rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--brand-cyan, #14cad4);
+  opacity: 0.8;
+  animation: observability-pulse 1s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes observability-pulse {
+  0% {
+    opacity: 0.3;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.3;
+    transform: scale(0.85);
+  }
+}
+
+.observability-charts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.observability-charts-header h4 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.timeseries-window-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  padding: 0.2rem;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.timeseries-window-button {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.38rem 0.6rem;
+  cursor: pointer;
+}
+
+.timeseries-window-button:hover {
+  background: rgba(20, 202, 212, 0.1);
+}
+
+.timeseries-window-button.is-active {
+  background: var(--brand-cyan, #14cad4);
+  border-color: rgba(20, 202, 212, 0.7);
+  color: #032025;
+}
+
 .tool-table-section h4 {
   margin: 0 0 0.55rem;
   font-family: 'Space Grotesk', sans-serif;
@@ -655,5 +790,11 @@
 
   .span-attributes-toggle {
     margin-left: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .observability-charts-grid {
+    grid-template-columns: 1fr;
   }
 }

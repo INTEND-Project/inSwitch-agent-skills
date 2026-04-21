@@ -1,14 +1,17 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { getMetricsSummary, MetricsSummaryResponse } from '../../api/tracing';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { getMetricsSummary, MetricsSummaryResponse, TimeseriesWindow } from '../../api/tracing';
 import usePolledFetch from '../../hooks/usePolledFetch';
 import { useCurrency } from '../../hooks/useCurrency';
 import { formatCurrency } from '../../utils/currency';
+import ChartsPanel from './ChartsPanel';
 
 type SummaryViewProps = {
   onOpenTraces: () => void;
 };
 
 const CACHE_TTL_MS = 10_000;
+const CHARTS_WINDOW_STORAGE_KEY = 'observability.chartsWindow';
+const WINDOW_OPTIONS: TimeseriesWindow[] = ['24h', '7d', '30d'];
 let summaryCache: { data: MetricsSummaryResponse; fetchedAt: number } | null = null;
 
 const formatSuccessRate = (value: number) => `${(value * 100).toFixed(1)}%`;
@@ -28,46 +31,83 @@ const formatUpdatedAt = (timestampMs: number) =>
     hour12: false
   }).format(new Date(timestampMs));
 
+const isTimeseriesWindow = (value: string): value is TimeseriesWindow =>
+  WINDOW_OPTIONS.includes(value as TimeseriesWindow);
+
 const SummaryView: React.FC<SummaryViewProps> = ({ onOpenTraces }) => {
   const { currency, rates } = useCurrency();
   const [data, setData] = useState<MetricsSummaryResponse | null>(summaryCache?.data ?? null);
-  const [isLoading, setIsLoading] = useState(!summaryCache);
+  const [isInitialLoading, setIsInitialLoading] = useState(!summaryCache);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatedAtMs, setUpdatedAtMs] = useState<number | null>(summaryCache?.fetchedAt ?? null);
+  const [chartsWindow, setChartsWindow] = useState<TimeseriesWindow>('24h');
+  const hasDataRef = useRef(!!summaryCache);
 
-  const loadSummary = useCallback(async (force = false) => {
+  const loadSummary = useCallback(async (options?: { force?: boolean; hardReload?: boolean }) => {
+    const force = options?.force ?? false;
+    const hardReload = options?.hardReload ?? false;
     const hasFreshCache =
       !force && summaryCache && Date.now() - summaryCache.fetchedAt < CACHE_TTL_MS;
 
     if (hasFreshCache && summaryCache) {
-      setData(summaryCache.data);
+      setData((prev) => (prev === summaryCache.data ? prev : summaryCache.data));
       setUpdatedAtMs(summaryCache.fetchedAt);
-      setError(null);
-      setIsLoading(false);
+      setError((prev) => (prev === null ? prev : null));
+      setIsInitialLoading(false);
+      setIsRefreshing(false);
+      hasDataRef.current = true;
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
+    const hasExistingData = hasDataRef.current || !!summaryCache;
+    if (hardReload) {
+      setData(null);
+      setUpdatedAtMs(null);
+      setIsInitialLoading(true);
+      hasDataRef.current = false;
+    } else if (!hasExistingData) {
+      setIsInitialLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
+    if (!hasExistingData || hardReload) {
+      setError((prev) => (prev === null ? prev : null));
+    }
+
     try {
       const result = await getMetricsSummary();
       const fetchedAt = Date.now();
       summaryCache = { data: result, fetchedAt };
       setData(result);
       setUpdatedAtMs(fetchedAt);
+      setError((prev) => (prev === null ? prev : null));
+      hasDataRef.current = true;
     } catch (err) {
       console.error(err);
       setError('Unable to load summary metrics. Check API host configuration and backend availability.');
     } finally {
-      setIsLoading(false);
+      setIsInitialLoading(false);
+      setIsRefreshing(false);
     }
   }, []);
 
-  const { runNow } = usePolledFetch(() => loadSummary(false), 15_000);
+  const { runNow } = usePolledFetch(() => loadSummary(), 15_000);
 
   useEffect(() => {
     void runNow();
   }, [runNow]);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(CHARTS_WINDOW_STORAGE_KEY);
+    if (stored && isTimeseriesWindow(stored)) {
+      setChartsWindow(stored);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(CHARTS_WINDOW_STORAGE_KEY, chartsWindow);
+  }, [chartsWindow]);
 
   return (
     <div className="observability-summary">
@@ -83,19 +123,24 @@ const SummaryView: React.FC<SummaryViewProps> = ({ onOpenTraces }) => {
         <button
           type="button"
           className="observability-action"
-          onClick={() => void runNow(() => loadSummary(true))}
-          disabled={isLoading}
-          title="Force refresh"
+          onClick={(event) =>
+            void runNow(() => loadSummary({ force: true, hardReload: event.shiftKey }))
+          }
+          disabled={isInitialLoading || isRefreshing}
+          title="Refresh (Shift+click for hard reload)"
           aria-label="Force refresh"
         >
-          {isLoading ? 'Refreshing…' : 'Refresh'}
+          {isInitialLoading || isRefreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
 
-      {isLoading && <p className="observability-inline-message">Loading summary metrics…</p>}
-      {!isLoading && error && <p className="observability-inline-error">{error}</p>}
+      {isInitialLoading && !data && (
+        <p className="observability-inline-message">Loading summary metrics…</p>
+      )}
+      {!isInitialLoading && !data && error && <p className="observability-inline-error">{error}</p>}
+      {data && error && <p className="observability-inline-error">Showing previous data. {error}</p>}
 
-      {!isLoading && !error && data && (
+      {data && (
         <>
           <div className="kpi-grid kpi-grid-main">
             <article className="kpi-card kpi-card-cost">
@@ -124,6 +169,26 @@ const SummaryView: React.FC<SummaryViewProps> = ({ onOpenTraces }) => {
               <p className="kpi-label">Avg duration</p>
               <p className="kpi-value">{formatAvgDuration(data.avg_duration_ms)}</p>
             </article>
+          </div>
+
+          <div className="observability-charts-section">
+            <div className="observability-charts-header">
+              <h4>Activity over time</h4>
+              <div className="timeseries-window-switch" role="group" aria-label="Timeseries window">
+                {WINDOW_OPTIONS.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`timeseries-window-button ${chartsWindow === option ? 'is-active' : ''}`}
+                    onClick={() => setChartsWindow(option)}
+                    aria-pressed={chartsWindow === option}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <ChartsPanel window={chartsWindow} />
           </div>
 
           <section className="tool-table-section summary-tools-section">
