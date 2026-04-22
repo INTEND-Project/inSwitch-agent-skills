@@ -289,7 +289,10 @@ def metrics_timeseries(
         raise ValueError("Window and bucket combination is not aligned")
 
     now_value = now_ts if now_ts is not None else time.time()
-    until_ts = int(now_value // bucket_seconds) * bucket_seconds
+    # Include the in-progress bucket (e.g., the current hour/day) by using
+    # the next bucket boundary as the exclusive upper bound.
+    current_bucket_start_ts = int(now_value // bucket_seconds) * bucket_seconds
+    until_ts = current_bucket_start_ts + bucket_seconds
     since_ts = until_ts - window_seconds
     point_count = window_seconds // bucket_seconds
 
