@@ -161,6 +161,33 @@ class MetricsTimeseriesTests(unittest.TestCase):
         self.assertIsNone(empty_bucket["p95_duration_ms"])
         self.assertIsNone(empty_bucket["avg_duration_ms"])
 
+    def test_includes_current_hour_bucket(self) -> None:
+        now_ts = 1_700_000_000
+        data = trace_api.metrics_timeseries(window="24h", bucket="hour", now_ts=now_ts)
+        current_hour_start = int(now_ts // 3600) * 3600
+        self.assertEqual(data["points"][-1]["bucket_start_ts"], current_hour_start)
+
+        self._insert_span("r4", "t4", "agent.request", current_hour_start + 120, 250, status="ok")
+        self._insert_span(
+            "c4",
+            "t4",
+            "gen_ai.chat",
+            current_hour_start + 180,
+            20,
+            parent_span_id="r4",
+            attributes={"gen_ai.usage.cost_usd": 0.5},
+        )
+
+        refreshed = trace_api.metrics_timeseries(window="24h", bucket="hour", now_ts=now_ts)
+        current_point = refreshed["points"][-1]
+        self.assertEqual(current_point["bucket_start_ts"], current_hour_start)
+        self.assertEqual(current_point["trace_count"], 1)
+        self.assertEqual(current_point["success_count"], 1)
+        self.assertEqual(current_point["error_count"], 0)
+        self.assertEqual(current_point["avg_duration_ms"], 250.0)
+        self.assertEqual(current_point["p95_duration_ms"], 250.0)
+        self.assertEqual(current_point["total_cost_usd"], 0.5)
+
 
 if __name__ == "__main__":
     unittest.main()
