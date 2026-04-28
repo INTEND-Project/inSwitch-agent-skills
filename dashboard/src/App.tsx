@@ -104,6 +104,10 @@ const App: React.FC = () => {
   const buildNodeId = useCallback((kind: GraphKind, name: string) => `${kind}:${name}`, []);
 
   const canSend = useMemo(() => input.trim().length > 0 && !isSending, [input, isSending]);
+  const canExportSession = useMemo(
+    () => messages.filter((message) => message.role !== 'system').length > 0,
+    [messages]
+  );
 
   const renderMarkdown = useCallback(
     (content: string, className: string) => (
@@ -582,6 +586,40 @@ const App: React.FC = () => {
     setActiveView('observability');
   };
 
+  const formatLocalFileTimestamp = (date: Date) => {
+    const pad = (value: number) => String(value).padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    const seconds = pad(date.getSeconds());
+    return `${year}${month}${day}-${hours}${minutes}${seconds}`;
+  };
+
+  const buildSessionMarkdown = (sessionMessages: Message[], exportedAt: Date) => {
+    const sections = sessionMessages.map((message) => {
+      const normalizedText = message.text.replace(/\r\n/g, '\n');
+      return `## [${message.role}]\n${normalizedText}\n\n---`;
+    });
+    return `# inSwitch session — ${exportedAt.toISOString()}\n\n${sections.join('\n\n')}\n`;
+  };
+
+  const exportSession = () => {
+    if (!canExportSession) return;
+    const now = new Date();
+    const markdown = buildSessionMarkdown(messages, now);
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `inswitch-session-${formatLocalFileTimestamp(now)}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const highlightJson = (json: string) => {
     const escaped = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return escaped.replace(
@@ -888,9 +926,19 @@ const App: React.FC = () => {
             </button>
           </div>
         </div>
-        <div className="status-pill">
-          <span className={`status-dot ${isSending ? 'busy' : 'ready'}`} />
-          {isSending ? 'Thinking…' : 'Ready'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <button
+            type="button"
+            className="send-button"
+            onClick={exportSession}
+            disabled={!canExportSession}
+          >
+            Export session
+          </button>
+          <div className="status-pill">
+            <span className={`status-dot ${isSending ? 'busy' : 'ready'}`} />
+            {isSending ? 'Thinking…' : 'Ready'}
+          </div>
         </div>
       </header>
 
