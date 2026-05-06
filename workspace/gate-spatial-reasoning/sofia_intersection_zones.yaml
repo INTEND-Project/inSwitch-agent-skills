@@ -1,0 +1,564 @@
+# ============================================================
+# Sofia intersection — semantic zone map
+# Site: Cherni Vruh Boulevard × Sreburna Street, Sofia, Bulgaria
+# Source: GATE Institute (INTEND iDataSpace use case)
+# Reference: Peykova, Petrova-Antonova, Karamitov (2024).
+#   "Data Processing and Enrichment of LiDAR-Derived Traffic Data",
+#   ISPRS Annals X-4/W5-2024, p. 263-270.
+#   https://doi.org/10.5194/isprs-annals-X-4-W5-2024-263-2024
+# ============================================================
+
+intersection:
+  name: "Cherni Vruh Boulevard x Sreburna Street"
+  city: "Sofia, Bulgaria"
+  sensors: 6           # LiDAR (Ouster OS1) feeding an Augmented LiDAR Box
+  data_format: OSEF    # Outsight Open SErialization Format
+  zone_count:
+    lanes: 22
+    crosswalks: 5
+    subway_exits: 6
+    islands: 4
+    bus_bays: 1
+    intersection_center: 1
+
+# ------------------------------------------------------------
+# Naming convention
+# ------------------------------------------------------------
+naming_convention:
+  pattern_lane: "L<id>_<from_side>_<to_sides>"
+  pattern_other: "<TYPE><id>_<side>"
+  sides:
+    n: north
+    s: south
+    e: east
+    w: west
+    ne: north-east (diagonal approach)
+    all: any approach (canonical outgoing lane)
+  to_sides_compound: |
+    Multi-letter suffix lists permitted exit sides without separators.
+    Example: L1_n_ws comes from north, may exit west or south (w + s).
+
+# ------------------------------------------------------------
+# Zone catalogue (each zone has: type, role, side, links)
+# ------------------------------------------------------------
+zones:
+
+  I:
+    type: intersection_center
+    description: "Central conflict area where all approaches meet."
+    connects: all_lanes
+
+  # ---- Traffic lanes ----
+  L1_n_ws:
+    type: lane
+    role: incoming
+    from_approach: n
+    exit_sides: [w, s]
+    also_leading_w:            # lanes that functionally exit toward w
+      - L7_e_w
+      - L8_e_sw
+      - L21_ne_w
+      - L22_ne_w
+    exits_to_s:                # canonical outgoing lanes (any-approach)
+      - L15_all_s
+      - L16_all_s
+      - L17_all_s
+    also_leading_s:            # lanes that functionally exit toward s
+      - L8_e_sw
+      - L9_e_s
+      - L18_w_es
+
+  L2_n_s:
+    type: lane
+    role: incoming
+    from_approach: n
+    exit_side: s
+    exits_to_s:                # canonical outgoing lanes (any-approach)
+      - L15_all_s
+      - L16_all_s
+      - L17_all_s
+    also_leading_s:            # lanes that functionally exit toward s
+      - L8_e_sw
+      - L9_e_s
+      - L18_w_es
+
+  L3_n_e:
+    type: lane
+    role: incoming
+    from_approach: n
+    exit_side: e
+    exits_to_e:                # canonical outgoing lanes (any-approach)
+      - L10_all_e
+      - L11_all_e
+    also_leading_e:            # lanes that functionally exit toward e
+      - L12_s_e
+      - L18_w_es
+      - L19_w_e
+
+  L4_all_n:
+    type: lane
+    role: outgoing
+    from_approach: any
+    exit_side: n
+    entered_from:                 # incoming lanes that may exit here
+      - L6_e_n
+      - L13_s_n
+      - L14_s_n
+      - L20_w_n
+
+  L5_all_n:
+    type: lane
+    role: outgoing
+    from_approach: any
+    exit_side: n
+    entered_from:                 # incoming lanes that may exit here
+      - L6_e_n
+      - L13_s_n
+      - L14_s_n
+      - L20_w_n
+
+  L6_e_n:
+    type: lane
+    role: incoming
+    from_approach: e
+    exit_side: n
+    exits_to_n:                # canonical outgoing lanes (any-approach)
+      - L4_all_n
+      - L5_all_n
+    also_leading_n:            # lanes that functionally exit toward n
+      - L13_s_n
+      - L14_s_n
+      - L20_w_n
+
+  L7_e_w:
+    type: lane
+    role: incoming
+    from_approach: e
+    exit_side: w
+    also_leading_w:            # lanes that functionally exit toward w
+      - L1_n_ws
+      - L21_ne_w
+      - L22_ne_w
+
+  L8_e_sw:
+    type: lane
+    role: incoming
+    from_approach: e
+    exit_sides: [s, w]
+    exits_to_s:                # canonical outgoing lanes (any-approach)
+      - L15_all_s
+      - L16_all_s
+      - L17_all_s
+    also_leading_s:            # lanes that functionally exit toward s
+      - L1_n_ws
+      - L2_n_s
+      - L18_w_es
+    also_leading_w:            # lanes that functionally exit toward w
+      - L1_n_ws
+      - L21_ne_w
+      - L22_ne_w
+
+  L9_e_s:
+    type: lane
+    role: incoming
+    from_approach: e
+    exit_side: s
+    exits_to_s:                # canonical outgoing lanes (any-approach)
+      - L15_all_s
+      - L16_all_s
+      - L17_all_s
+    also_leading_s:            # lanes that functionally exit toward s
+      - L1_n_ws
+      - L2_n_s
+      - L18_w_es
+
+  L10_all_e:
+    type: lane
+    role: outgoing
+    from_approach: any
+    exit_side: e
+    entered_from:                 # incoming lanes that may exit here
+      - L3_n_e
+      - L12_s_e
+      - L18_w_es
+      - L19_w_e
+
+  L11_all_e:
+    type: lane
+    role: outgoing
+    from_approach: any
+    exit_side: e
+    entered_from:                 # incoming lanes that may exit here
+      - L3_n_e
+      - L12_s_e
+      - L18_w_es
+      - L19_w_e
+
+  L12_s_e:
+    type: lane
+    role: incoming
+    from_approach: s
+    exit_side: e
+    exits_to_e:                # canonical outgoing lanes (any-approach)
+      - L10_all_e
+      - L11_all_e
+    also_leading_e:            # lanes that functionally exit toward e
+      - L3_n_e
+      - L18_w_es
+      - L19_w_e
+
+  L13_s_n:
+    type: lane
+    role: incoming
+    from_approach: s
+    exit_side: n
+    exits_to_n:                # canonical outgoing lanes (any-approach)
+      - L4_all_n
+      - L5_all_n
+    also_leading_n:            # lanes that functionally exit toward n
+      - L6_e_n
+      - L20_w_n
+
+  L14_s_n:
+    type: lane
+    role: incoming
+    from_approach: s
+    exit_side: n
+    exits_to_n:                # canonical outgoing lanes (any-approach)
+      - L4_all_n
+      - L5_all_n
+    also_leading_n:            # lanes that functionally exit toward n
+      - L6_e_n
+      - L20_w_n
+
+  L15_all_s:
+    type: lane
+    role: outgoing
+    from_approach: any
+    exit_side: s
+    entered_from:                 # incoming lanes that may exit here
+      - L1_n_ws
+      - L2_n_s
+      - L8_e_sw
+      - L9_e_s
+      - L18_w_es
+
+  L16_all_s:
+    type: lane
+    role: outgoing
+    from_approach: any
+    exit_side: s
+    entered_from:                 # incoming lanes that may exit here
+      - L1_n_ws
+      - L2_n_s
+      - L8_e_sw
+      - L9_e_s
+      - L18_w_es
+
+  L17_all_s:
+    type: lane
+    role: outgoing
+    from_approach: any
+    exit_side: s
+    entered_from:                 # incoming lanes that may exit here
+      - L1_n_ws
+      - L2_n_s
+      - L8_e_sw
+      - L9_e_s
+      - L18_w_es
+
+  L18_w_es:
+    type: lane
+    role: incoming
+    from_approach: w
+    exit_sides: [e, s]
+    exits_to_e:                # canonical outgoing lanes (any-approach)
+      - L10_all_e
+      - L11_all_e
+    also_leading_e:            # lanes that functionally exit toward e
+      - L3_n_e
+      - L12_s_e
+    exits_to_s:                # canonical outgoing lanes (any-approach)
+      - L15_all_s
+      - L16_all_s
+      - L17_all_s
+    also_leading_s:            # lanes that functionally exit toward s
+      - L1_n_ws
+      - L2_n_s
+      - L8_e_sw
+      - L9_e_s
+
+  L19_w_e:
+    type: lane
+    role: incoming
+    from_approach: w
+    exit_side: e
+    exits_to_e:                # canonical outgoing lanes (any-approach)
+      - L10_all_e
+      - L11_all_e
+    also_leading_e:            # lanes that functionally exit toward e
+      - L3_n_e
+      - L12_s_e
+
+  L20_w_n:
+    type: lane
+    role: incoming
+    from_approach: w
+    exit_side: n
+    exits_to_n:                # canonical outgoing lanes (any-approach)
+      - L4_all_n
+      - L5_all_n
+    also_leading_n:            # lanes that functionally exit toward n
+      - L6_e_n
+      - L13_s_n
+      - L14_s_n
+
+  L21_ne_w:
+    type: lane
+    role: incoming
+    from_approach: ne
+    exit_side: w
+    also_leading_w:            # lanes that functionally exit toward w
+      - L1_n_ws
+      - L7_e_w
+      - L8_e_sw
+
+  L22_ne_w:
+    type: lane
+    role: incoming
+    from_approach: ne
+    exit_side: w
+    also_leading_w:            # lanes that functionally exit toward w
+      - L1_n_ws
+      - L7_e_w
+      - L8_e_sw
+
+  # ---- Crosswalks ----
+  C1_n:
+    type: crosswalk
+    side: n
+    crosses_lanes:                # lanes intersecting this side
+      - L1_n_ws
+      - L2_n_s
+      - L3_n_e
+      - L4_all_n
+      - L5_all_n
+      - L6_e_n
+      - L13_s_n
+      - L14_s_n
+      - L20_w_n
+    adjacent_pedestrian_zones:
+      - SE1_n
+      - SE2_n
+      - IS1_n
+
+  C2_n:
+    type: crosswalk
+    side: n
+    crosses_lanes:                # lanes intersecting this side
+      - L1_n_ws
+      - L2_n_s
+      - L3_n_e
+      - L4_all_n
+      - L5_all_n
+      - L6_e_n
+      - L13_s_n
+      - L14_s_n
+      - L20_w_n
+    adjacent_pedestrian_zones:
+      - SE1_n
+      - SE2_n
+      - IS1_n
+
+  C3_e:
+    type: crosswalk
+    side: e
+    crosses_lanes:                # lanes intersecting this side
+      - L3_n_e
+      - L6_e_n
+      - L7_e_w
+      - L8_e_sw
+      - L9_e_s
+      - L10_all_e
+      - L11_all_e
+      - L12_s_e
+      - L18_w_es
+      - L19_w_e
+    adjacent_pedestrian_zones:
+      - SE3_e
+      - IS2_e
+
+  C4_s:
+    type: crosswalk
+    side: s
+    crosses_lanes:                # lanes intersecting this side
+      - L1_n_ws
+      - L2_n_s
+      - L8_e_sw
+      - L9_e_s
+      - L12_s_e
+      - L13_s_n
+      - L14_s_n
+      - L15_all_s
+      - L16_all_s
+      - L17_all_s
+      - L18_w_es
+    adjacent_pedestrian_zones:
+      - SE4_s
+
+  C5_w:
+    type: crosswalk
+    side: w
+    crosses_lanes:                # lanes intersecting this side
+      - L1_n_ws
+      - L7_e_w
+      - L8_e_sw
+      - L18_w_es
+      - L19_w_e
+      - L20_w_n
+      - L21_ne_w
+      - L22_ne_w
+    adjacent_pedestrian_zones:
+      - SE5_w
+      - SE6_w
+      - IS3_w
+      - IS4_w
+
+  # ---- Subway / metro exits ----
+  SE1_n:
+    type: subway_exit
+    side: n
+    nearby_pedestrian_zones:
+      - C1_n
+      - C2_n
+      - IS1_n
+
+  SE2_n:
+    type: subway_exit
+    side: n
+    nearby_pedestrian_zones:
+      - C1_n
+      - C2_n
+      - IS1_n
+
+  SE3_e:
+    type: subway_exit
+    side: e
+    nearby_pedestrian_zones:
+      - C3_e
+      - IS2_e
+
+  SE4_s:
+    type: subway_exit
+    side: s
+    nearby_pedestrian_zones:
+      - C4_s
+
+  SE5_w:
+    type: subway_exit
+    side: w
+    nearby_pedestrian_zones:
+      - C5_w
+      - IS3_w
+      - IS4_w
+
+  SE6_w:
+    type: subway_exit
+    side: w
+    nearby_pedestrian_zones:
+      - C5_w
+      - IS3_w
+      - IS4_w
+
+  # ---- Traffic islands ----
+  IS1_n:
+    type: island
+    side: n
+    serves_crosswalks:
+      - C1_n
+      - C2_n
+
+  IS2_e:
+    type: island
+    side: e
+    serves_crosswalks:
+      - C3_e
+
+  IS3_w:
+    type: island
+    side: w
+    serves_crosswalks:
+      - C5_w
+
+  IS4_w:
+    type: island
+    side: w
+    serves_crosswalks:
+      - C5_w
+
+  # ---- Bus bays ----
+  BB1_n:
+    type: bus_bay
+    side: n
+
+# ------------------------------------------------------------
+# Side summaries (for spatial filtering)
+# ------------------------------------------------------------
+by_side:
+  n:    # north
+    incoming_lanes:                  [L1_n_ws, L2_n_s, L3_n_e]
+    outgoing_lanes:                  [L4_all_n, L5_all_n]
+    incoming_lanes_exiting_here:     [L6_e_n, L13_s_n, L14_s_n, L20_w_n]
+    crosswalks:                      [C1_n, C2_n]
+    subway_exits:                    [SE1_n, SE2_n]
+    islands:                         [IS1_n]
+    bus_bays:                        [BB1_n]
+
+  s:    # south
+    incoming_lanes:                  [L12_s_e, L13_s_n, L14_s_n]
+    outgoing_lanes:                  [L15_all_s, L16_all_s, L17_all_s]
+    incoming_lanes_exiting_here:     [L1_n_ws, L2_n_s, L8_e_sw, L9_e_s, L18_w_es]
+    crosswalks:                      [C4_s]
+    subway_exits:                    [SE4_s]
+
+  e:    # east
+    incoming_lanes:                  [L6_e_n, L7_e_w, L8_e_sw, L9_e_s]
+    outgoing_lanes:                  [L10_all_e, L11_all_e]
+    incoming_lanes_exiting_here:     [L3_n_e, L12_s_e, L18_w_es, L19_w_e]
+    crosswalks:                      [C3_e]
+    subway_exits:                    [SE3_e]
+    islands:                         [IS2_e]
+
+  w:    # west
+    incoming_lanes:                  [L18_w_es, L19_w_e, L20_w_n]
+    incoming_lanes_exiting_here:     [L1_n_ws, L7_e_w, L8_e_sw, L21_ne_w, L22_ne_w]
+    crosswalks:                      [C5_w]
+    subway_exits:                    [SE5_w, SE6_w]
+    islands:                         [IS3_w, IS4_w]
+
+  ne:    # north-east diagonal approach
+    incoming_lanes:                  [L21_ne_w, L22_ne_w]
+
+# ------------------------------------------------------------
+# Notes for the agent
+# ------------------------------------------------------------
+notes:
+  - |
+    A lane suffixed <from>_<to> with a single cardinal <from> is INCOMING
+    from that approach and exits toward <to>. Example: L2_n_s = from north,
+    continues south.
+  - |
+    A lane suffixed all_<side> is canonically OUTGOING toward <side>,
+    reachable from any incoming approach that turns that way.
+  - |
+    'exits_to_<side>' relations are derived from the from/to suffixes and
+    represent permissible movements at the lane level. Per-vehicle legality
+    (red lights, signage, time of day) is NOT encoded here.
+  - |
+    The dataset contains 7 canonical 'all_<side>' outgoing lanes (toward N,
+    E, S) but no canonical 'all_w' outgoing lane. Lanes such as L7_e_w and
+    L19_w_e effectively carry westbound traffic and are listed under
+    'also_leading_w' for any incoming lane that may exit toward west.
+  - |
+    Crosswalks, subway exits, islands and bus bays sharing the same side
+    are grouped under 'by_side' for quick spatial queries.
