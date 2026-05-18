@@ -33,6 +33,14 @@ from core.config import (
     ALLOWED_ROOTS,
 )
 
+from core.fs import (
+    read_text_file,
+    safe_abs_path,
+    normalize_folder_path,
+    resolve_folder_abs,
+    resolve_agent_path,
+    list_folder_overview,
+)
 class LogStreamHub:
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -57,21 +65,6 @@ class LogStreamHub:
 
 
 LOG_STREAM_HUB = LogStreamHub()
-
-
-def read_text_file(path: str) -> str:
-    with open(path, "r", encoding="utf-8") as handle:
-        return handle.read()
-
-def safe_abs_path(path: str) -> str:
-    abs_path = os.path.abspath(path)
-    for root in ALLOWED_ROOTS:
-        root_abs = os.path.abspath(root)
-        if abs_path == root_abs or abs_path.startswith(root_abs + os.sep):
-            return abs_path
-    allowed = ", ".join(ALLOWED_ROOTS)
-    raise ValueError(f"Path must be within one of: {allowed}")
-
 
 def log_event(event_type: str, payload: Dict[str, Any]) -> None:
     os.makedirs(LOGS_DIR, exist_ok=True)
@@ -179,47 +172,6 @@ def build_environment_notes(skill_text: str) -> str:
             "Setup instructions (follow on skill load if needed):\n" + setup
         )
     return "\n\n".join(notes)
-
-
-def normalize_folder_path(folder_path: str) -> str:
-    if folder_path is None:
-        raise ValueError("Folder path is required.")
-    cleaned = folder_path.strip()
-    if not cleaned:
-        return "."
-    if os.path.isabs(cleaned):
-        raise ValueError("Folder path must be relative to /workspace.")
-    norm = os.path.normpath(cleaned)
-    if norm.startswith("..") or norm == "..":
-        raise ValueError("Folder path must be within /workspace.")
-    return norm
-
-
-def resolve_folder_abs(folder_path: str) -> str:
-    norm = normalize_folder_path(folder_path)
-    abs_path = os.path.abspath(os.path.join(WORKSPACE_DIR, norm))
-    return abs_path
-
-
-def resolve_agent_path(agent: "AgentState", path: Optional[str]) -> str:
-    base = resolve_folder_abs(agent.folder_path or ".")
-    if not path:
-        return base
-    if os.path.isabs(path):
-        return safe_abs_path(path)
-    return safe_abs_path(os.path.join(base, path))
-
-
-def list_folder_overview(folder_path: str) -> str:
-    folder_abs = resolve_folder_abs(folder_path)
-    if not os.path.isdir(folder_abs):
-        return f"No folder found: {folder_path}"
-
-    current_skill = os.path.join(folder_abs, "SKILL.md")
-    if os.path.isfile(current_skill):
-        return "Current folder skill: SKILL.md present"
-    return "Current folder skill: SKILL.md missing"
-
 
 def load_folder_skill(folder_path: str) -> str:
     folder_abs = resolve_folder_abs(folder_path)
