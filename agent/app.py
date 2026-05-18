@@ -21,15 +21,17 @@ from tracing import (
 )
 from trace_api import handle_trace_request
 
-CODE_DIR = os.getenv("AGENT_CODE_DIR", "/agent")
-WORKSPACE_DIR = os.getenv("AGENT_WORKSPACE_DIR", "/workspace")
-LOGS_DIR = os.getenv("AGENT_LOGS_DIR", "/logs")
-MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
-VERBOSE_DEFAULT = os.getenv("AGENT_VERBOSE", "true").lower() in {"1", "true", "yes", "on"}
-MAX_LOG_CHARS = int(os.getenv("AGENT_LOG_MAX_CHARS", "2000"))
-HTTP_HOST_DEFAULT = os.getenv("AGENT_HTTP_HOST", "0.0.0.0")
-HTTP_PORT_DEFAULT = int(os.getenv("AGENT_HTTP_PORT", "8085"))
-
+from core.config import (
+    CODE_DIR,
+    WORKSPACE_DIR,
+    LOGS_DIR,
+    MODEL,
+    VERBOSE_DEFAULT,
+    MAX_LOG_CHARS,
+    HTTP_HOST_DEFAULT,
+    HTTP_PORT_DEFAULT,
+    ALLOWED_ROOTS,
+)
 
 class LogStreamHub:
     def __init__(self) -> None:
@@ -60,10 +62,6 @@ LOG_STREAM_HUB = LogStreamHub()
 def read_text_file(path: str) -> str:
     with open(path, "r", encoding="utf-8") as handle:
         return handle.read()
-
-
-ALLOWED_ROOTS = [WORKSPACE_DIR, CODE_DIR, LOGS_DIR]
-
 
 def safe_abs_path(path: str) -> str:
     abs_path = os.path.abspath(path)
@@ -237,7 +235,6 @@ def base_system_prompt() -> str:
         "Use the provided tools when you need to read/write files, run shell commands, execute Python, or call remote APIs. "
         "If needed information is missing or unclear, ask a concise follow-up question."
     )
-
 
 def build_captain_prompt(folder_overview: str, folder_skill: str) -> str:
     base = base_system_prompt()
