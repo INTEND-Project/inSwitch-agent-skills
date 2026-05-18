@@ -58,41 +58,7 @@ from core.prompts import (
     build_worker_prompt,
 )
 
-class LogStreamHub:
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._subscribers: List[Queue[str]] = []
-
-    def subscribe(self) -> Queue[str]:
-        queue: Queue[str] = Queue()
-        with self._lock:
-            self._subscribers.append(queue)
-        return queue
-
-    def unsubscribe(self, queue: Queue[str]) -> None:
-        with self._lock:
-            if queue in self._subscribers:
-                self._subscribers.remove(queue)
-
-    def publish(self, message: str) -> None:
-        with self._lock:
-            subscribers = list(self._subscribers)
-        for queue in subscribers:
-            queue.put(message)
-
-
-LOG_STREAM_HUB = LogStreamHub()
-
-def log_event(event_type: str, payload: Dict[str, Any]) -> None:
-    os.makedirs(LOGS_DIR, exist_ok=True)
-    timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-    date_str = datetime.utcnow().date().isoformat()
-    log_path = os.path.join(LOGS_DIR, f"{date_str}.log")
-    record = {"ts": timestamp, "event": event_type, **payload}
-    line = json.dumps(record, ensure_ascii=True)
-    with open(log_path, "a", encoding="utf-8") as handle:
-        handle.write(line + "\n")
-    LOG_STREAM_HUB.publish(line)
+from core.logging_hub import LogStreamHub, LOG_STREAM_HUB, log_event
 
 def tool_definitions(include_delegate: bool) -> List[Dict[str, Any]]:
     tools: List[Dict[str, Any]] = [
