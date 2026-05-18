@@ -41,6 +41,17 @@ from core.fs import (
     resolve_agent_path,
     list_folder_overview,
 )
+
+from core.skills import (
+    parse_frontmatter,
+    extract_frontmatter_description,
+    extract_frontmatter_compatibility,
+    extract_frontmatter_name,
+    extract_setup_section,
+    build_environment_notes,
+    load_folder_skill,
+)
+
 class LogStreamHub:
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -76,110 +87,6 @@ def log_event(event_type: str, payload: Dict[str, Any]) -> None:
     with open(log_path, "a", encoding="utf-8") as handle:
         handle.write(line + "\n")
     LOG_STREAM_HUB.publish(line)
-
-
-def extract_frontmatter_description(skill_text: str) -> str:
-    lines = skill_text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return ""
-    idx = 1
-    while idx < len(lines):
-        line = lines[idx]
-        if line.strip() == "---":
-            break
-        if line.startswith("description:"):
-            raw = line.split(":", 1)[1].strip()
-            if raw in {"|", ">"}:
-                block_lines: List[str] = []
-                idx += 1
-                while idx < len(lines):
-                    next_line = lines[idx]
-                    if next_line.strip() == "---":
-                        break
-                    if next_line.startswith(" ") or next_line.startswith("\t"):
-                        block_lines.append(next_line.lstrip())
-                        idx += 1
-                        continue
-                    break
-                if raw == ">":
-                    return " ".join(line.strip() for line in block_lines).strip()
-                return "\n".join(block_lines).strip()
-            return raw.strip().strip('"').strip("'")
-        idx += 1
-    return ""
-
-
-def extract_frontmatter_compatibility(skill_text: str) -> str:
-    lines = skill_text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return ""
-    idx = 1
-    while idx < len(lines):
-        line = lines[idx]
-        if line.strip() == "---":
-            break
-        if line.startswith("compatibility:"):
-            raw = line.split(":", 1)[1].strip()
-            return raw.strip().strip('"').strip("'")
-        idx += 1
-    return ""
-
-
-def extract_frontmatter_name(skill_text: str) -> str:
-    lines = skill_text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return ""
-    idx = 1
-    while idx < len(lines):
-        line = lines[idx]
-        if line.strip() == "---":
-            break
-        if line.startswith("name:"):
-            raw = line.split(":", 1)[1].strip()
-            return raw.strip().strip('"').strip("'")
-        idx += 1
-    return ""
-
-
-def extract_setup_section(skill_text: str) -> str:
-    lines = skill_text.splitlines()
-    start_idx = None
-    for idx, line in enumerate(lines):
-        if line.startswith("## "):
-            title = line[3:].strip().lower()
-            if title == "setup" or title.startswith("setup:"):
-                start_idx = idx
-                break
-    if start_idx is None:
-        return ""
-    end_idx = len(lines)
-    for idx in range(start_idx + 1, len(lines)):
-        if lines[idx].startswith("## "):
-            end_idx = idx
-            break
-    section = "\n".join(lines[start_idx:end_idx]).strip()
-    return section
-
-
-def build_environment_notes(skill_text: str) -> str:
-    compatibility = extract_frontmatter_compatibility(skill_text)
-    setup = extract_setup_section(skill_text)
-    notes: List[str] = []
-    if compatibility:
-        notes.append("Compatibility requirements:\n" + compatibility)
-    if setup:
-        notes.append(
-            "Setup instructions (follow on skill load if needed):\n" + setup
-        )
-    return "\n\n".join(notes)
-
-def load_folder_skill(folder_path: str) -> str:
-    folder_abs = resolve_folder_abs(folder_path)
-    skill_file = os.path.join(folder_abs, "SKILL.md")
-    if not os.path.isfile(skill_file):
-        raise FileNotFoundError(f"SKILL.md not found in folder: {folder_path}")
-    return read_text_file(skill_file).strip()
-
 
 def base_system_prompt() -> str:
     return (
