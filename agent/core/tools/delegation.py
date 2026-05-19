@@ -138,13 +138,11 @@ def delegate_task(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
         },
     ):
         response_text = ctx.runner(
-            client=ctx.client,
             agent=worker,
             user_input=task,
             folder_overview=list_folder_overview(worker.folder_path),
             folder_skill=worker.folder_skill or "",
             agents=ctx.agents,
-            verbose=ctx.verbose,
         )
 
     log_event(
