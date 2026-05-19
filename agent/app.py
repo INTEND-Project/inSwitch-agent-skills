@@ -69,201 +69,7 @@ from core.agent import (
     list_agents,
 )
 
-def tool_definitions(include_delegate: bool) -> List[Dict[str, Any]]:
-    tools: List[Dict[str, Any]] = [
-        {
-            "type": "function",
-            "name": "run_shell",
-            "description": "Run a shell command in the container and return stdout, stderr, and exit code. Defaults to the agent's folder if cwd is not provided.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string", "description": "Shell command to execute."},
-                    "cwd": {
-                        "type": "string",
-                        "description": "Working directory. Defaults to the agent's folder under /workspace.",
-                    },
-                },
-                "required": ["command"],
-            },
-        },
-        {
-            "type": "function",
-            "name": "run_python",
-            "description": "Execute a Python code snippet and return stdout, stderr, and exit code.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "code": {"type": "string", "description": "Python code to run."},
-                },
-                "required": ["code"],
-            },
-        },
-        {
-            "type": "function",
-            "name": "read_file",
-            "description": "Read a UTF-8 text file under /workspace, /agent, or /logs. Relative paths resolve from the agent's folder.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Path to the file."},
-                },
-                "required": ["path"],
-            },
-        },
-        {
-            "type": "function",
-            "name": "write_file",
-            "description": "Write UTF-8 text to a file under /workspace, /agent, or /logs, creating directories if needed. Relative paths resolve from the agent's folder.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Path to the file."},
-                    "content": {"type": "string", "description": "File contents."},
-                },
-                "required": ["path", "content"],
-            },
-        },
-        {
-            "type": "function",
-            "name": "list_dir",
-            "description": "List files and directories under /workspace, /agent, or /logs. Relative paths resolve from the agent's folder.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Directory path to list. Defaults to the agent's folder under /workspace.",
-                    }
-                },
-            },
-        },
-        {
-            "type": "function",
-            "name": "http_request",
-            "description": "Call a remote HTTP API and return status, headers, and body.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "method": {"type": "string", "description": "HTTP method, e.g. GET, POST."},
-                    "url": {"type": "string", "description": "Full URL."},
-                    "headers": {"type": "object", "description": "HTTP headers."},
-                    "params": {"type": "object", "description": "Query parameters."},
-                    "json": {"type": "object", "description": "JSON body."},
-                    "data": {"type": "string", "description": "Raw body as string."},
-                    "timeout": {"type": "number", "description": "Timeout in seconds."},
-                },
-                "required": ["method", "url"],
-            },
-        },
-    ]
-    if include_delegate:
-        tools.append(
-            {
-                "type": "function",
-                "name": "delegate_task",
-                "description": "Delegate a subtask to a named sub-agent assigned to a folder.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "agent_name": {"type": "string", "description": "Sub-agent name."},
-                        "folder_path": {
-                            "type": "string",
-                            "description": "Folder path relative to /workspace (same as or under the parent folder).",
-                        },
-                        "task": {"type": "string", "description": "Task description for the sub-agent."},
-                    },
-                    "required": ["agent_name", "folder_path", "task"],
-                },
-            }
-        )
-        tools.append(
-            {
-                "type": "function",
-                "name": "list_agents",
-                "description": "List active agents and their assigned skills.",
-                "parameters": {"type": "object", "properties": {}},
-            }
-        )
-    return tools
-
-
-def run_shell(command: str, cwd: Optional[str]) -> Dict[str, Any]:
-    workdir = cwd or WORKSPACE_DIR
-    result = subprocess.run(
-        command,
-        shell=True,
-        cwd=workdir,
-        capture_output=True,
-        text=True,
-    )
-    return {
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "exit_code": result.returncode,
-    }
-
-
-def run_python(code: str) -> Dict[str, Any]:
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-        cwd=WORKSPACE_DIR,
-    )
-    return {
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "exit_code": result.returncode,
-    }
-
-
-def read_file(path: str) -> Dict[str, Any]:
-    abs_path = safe_abs_path(path)
-    return {"content": read_text_file(abs_path)}
-
-
-def write_file(path: str, content: str) -> Dict[str, Any]:
-    abs_path = safe_abs_path(path)
-    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-    with open(abs_path, "w", encoding="utf-8") as handle:
-        handle.write(content)
-    return {"status": "ok", "path": abs_path}
-
-
-def list_dir(path: Optional[str]) -> Dict[str, Any]:
-    target = path or WORKSPACE_DIR
-    abs_path = safe_abs_path(target)
-    entries = []
-    for name in sorted(os.listdir(abs_path)):
-        full_path = os.path.join(abs_path, name)
-        entries.append({"name": name, "type": "dir" if os.path.isdir(full_path) else "file"})
-    return {"path": abs_path, "entries": entries}
-
-
-def http_request(
-    method: str,
-    url: str,
-    headers: Optional[Dict[str, str]] = None,
-    params: Optional[Dict[str, Any]] = None,
-    json_body: Optional[Dict[str, Any]] = None,
-    data: Optional[str] = None,
-    timeout: Optional[float] = None,
-) -> Dict[str, Any]:
-    response = requests.request(
-        method=method,
-        url=url,
-        headers=headers,
-        params=params,
-        json=json_body,
-        data=data,
-        timeout=timeout or 30,
-    )
-    return {
-        "status_code": response.status_code,
-        "headers": dict(response.headers),
-        "body": response.text,
-    }
+from core.tools import ToolContext, dispatch, get_schemas
 
 def run_agent_turn(
     client: OpenAI,
@@ -276,7 +82,7 @@ def run_agent_turn(
 ) -> str:
     if agent.role == "captain":
         system_prompt = build_captain_prompt(folder_overview, folder_skill)
-        tools = tool_definitions(include_delegate=True)
+        tools = get_schemas(include_delegate=True)
     else:
         if not agent.folder_path or agent.folder_skill is None:
             return "Error: sub-agent is missing a folder."
@@ -286,7 +92,7 @@ def run_agent_turn(
             agent.name,
             folder_overview,
         )
-        tools = tool_definitions(include_delegate=False)
+        tools = get_schemas(include_delegate=False)
 
     # First LLM call for this turn
     with start_span("gen_ai.chat", {
@@ -346,16 +152,17 @@ def run_agent_turn(
                 "agent.name": agent.name,
             }) as tool_span:
                 try:
-                    result = dispatch_tool(
-                        tool_name,
-                        args,
+                    ctx = ToolContext(
                         agent=agent,
                         agents=agents,
                         client=client,
+                        model=MODEL,
+                        verbose=verbose,
+                        runner=run_agent_turn,
                         folder_overview=folder_overview,
                         folder_skill=folder_skill,
-                        verbose=verbose,
                     )
+                    result = dispatch(tool_name, args, ctx)
                 except Exception as exc:
                     result = {"error": str(exc)}
                     tool_span.mark_error(str(exc))
@@ -414,141 +221,6 @@ def run_agent_turn(
 
     agent.last_response_id = response.id
     return extract_text(response) or "(no response)"
-
-
-def dispatch_tool(
-    name: str,
-    args: Dict[str, Any],
-    *,
-    agent: AgentState,
-    agents: Dict[str, AgentState],
-    client: OpenAI,
-    folder_overview: str,
-    folder_skill: str,
-    verbose: bool,
-) -> Dict[str, Any]:
-    if name == "run_shell":
-        cwd = resolve_agent_path(agent, args.get("cwd"))
-        return run_shell(args["command"], cwd)
-    if name == "run_python":
-        return run_python(args["code"])
-    if name == "read_file":
-        path = resolve_agent_path(agent, args["path"])
-        return read_file(path)
-    if name == "write_file":
-        path = resolve_agent_path(agent, args["path"])
-        return write_file(path, args["content"])
-    if name == "list_dir":
-        path = resolve_agent_path(agent, args.get("path"))
-        return list_dir(path)
-    if name == "http_request":
-        return http_request(
-            method=args["method"],
-            url=args["url"],
-            headers=args.get("headers"),
-            params=args.get("params"),
-            json_body=args.get("json"),
-            data=args.get("data"),
-            timeout=args.get("timeout"),
-        )
-    if name == "list_agents":
-        return list_agents(agents)
-    if name == "delegate_task":
-        if agent.role != "captain":
-            return {"error": "Only the captain can delegate tasks."}
-        agent_name = args["agent_name"]
-        folder_path = args["folder_path"]
-        task = args["task"]
-        try:
-            normalized_folder = normalize_folder_path(folder_path)
-        except Exception as exc:
-            return {"error": str(exc)}
-        if not agent.folder_path:
-            return {"error": "Captain is missing a folder."}
-        if not is_within_parent(agent.folder_path, normalized_folder):
-            return {"error": "Folder must be the same as or a sub-folder of the parent folder."}
-        new_worker = False
-        if agent_name in agents:
-            worker = agents[agent_name]
-            if worker.role != "worker":
-                return {"error": "Agent name is already used by a non-worker."}
-            if worker.folder_path and worker.folder_path != normalized_folder:
-                return {
-                    "error": f"Agent '{agent_name}' is bound to folder '{worker.folder_path}'."
-                }
-        else:
-            worker = AgentState(name=agent_name, role="worker")
-            agents[agent_name] = worker
-            new_worker = True
-
-        if worker.folder_path is None:
-            worker.folder_path = normalized_folder
-        if new_worker:
-            log_event(
-                "agent_created",
-                {
-                    "agent": worker.name,
-                    "created_by": agent.name,
-                    "folder": worker.folder_path,
-                    "role": worker.role,
-                },
-            )
-        if worker.folder_skill is None:
-            try:
-                worker.folder_skill = load_folder_skill(worker.folder_path)
-            except Exception as exc:
-                if new_worker:
-                    del agents[agent_name]
-                return {"error": str(exc)}
-            worker.skill_name = extract_frontmatter_name(worker.folder_skill) or worker.folder_path
-            log_event(
-                "skill_loaded",
-                {
-                    "agent": worker.name,
-                    "skill": worker.skill_name,
-                },
-            )
-
-        log_event(
-            "agent_message",
-            {
-                "from": agent.name,
-                "to": worker.name,
-                "content": task,
-            },
-        )
-
-        # Span the sub-agent turn so its internal spans nest under it.
-        # This is the critical step that makes the trace tree reflect
-        # the captain -> delegate -> worker hierarchy.
-        with start_span("agent.turn", {
-            "agent.name": worker.name,
-            "agent.role": "worker",
-            "agent.skill": worker.skill_name or "",
-            "agent.folder": worker.folder_path or "",
-            "delegated_by": agent.name,
-        }):
-            response_text = run_agent_turn(
-                client=client,
-                agent=worker,
-                user_input=task,
-                folder_overview=list_folder_overview(worker.folder_path),
-                folder_skill=worker.folder_skill or "",
-                agents=agents,
-                verbose=verbose,
-            )
-        log_event(
-            "agent_message",
-            {
-                "from": worker.name,
-                "to": agent.name,
-                "content": response_text,
-            },
-        )
-        return {"agent_name": worker.name, "response": response_text}
-
-    raise ValueError(f"Unknown tool: {name}")
-
 
 def process_user_input(manager: AgentManager, user_input: str) -> str:
     if user_input == ":restart":
