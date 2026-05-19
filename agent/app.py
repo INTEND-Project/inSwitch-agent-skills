@@ -60,6 +60,15 @@ from core.prompts import (
 
 from core.logging_hub import LogStreamHub, LOG_STREAM_HUB, log_event
 
+from core.agent import (
+    AgentState,
+    AgentManager,
+    create_clean_captain,
+    restart_agent_session,
+    is_within_parent,
+    list_agents,
+)
+
 def tool_definitions(include_delegate: bool) -> List[Dict[str, Any]]:
     tools: List[Dict[str, Any]] = [
         {
@@ -255,84 +264,6 @@ def http_request(
         "headers": dict(response.headers),
         "body": response.text,
     }
-
-
-@dataclass
-class AgentState:
-    name: str
-    role: str
-    last_response_id: Optional[str] = None
-    folder_path: Optional[str] = None
-    folder_skill: Optional[str] = None
-    skill_name: Optional[str] = None
-
-
-@dataclass
-class AgentManager:
-    client: OpenAI
-    agents: Dict[str, AgentState]
-    verbose: bool
-
-    def captain(self) -> AgentState:
-        return self.agents["captain"]
-
-
-def create_clean_captain() -> AgentState:
-    return AgentState(name="captain", role="captain", folder_path=".")
-
-
-def restart_agent_session(manager: AgentManager, triggered_by: str) -> Dict[str, Any]:
-    killed_agents = sorted(manager.agents.keys())
-    for agent_name in killed_agents:
-        log_event(
-            "agent_killed",
-            {
-                "agent": agent_name,
-                "killed_by": triggered_by,
-                "reason": "restart",
-            },
-        )
-    manager.agents.clear()
-    manager.agents["captain"] = create_clean_captain()
-    log_event(
-        "agent_created",
-        {
-            "agent": "captain",
-            "created_by": triggered_by,
-            "reason": "restart",
-        },
-    )
-    log_event(
-        "session_restarted",
-        {
-            "triggered_by": triggered_by,
-            "killed_agents": killed_agents,
-        },
-    )
-    return {"killed_agents": killed_agents}
-
-
-def is_within_parent(parent_folder: str, child_folder: str) -> bool:
-    parent_abs = resolve_folder_abs(parent_folder)
-    child_abs = resolve_folder_abs(child_folder)
-    if child_abs == parent_abs:
-        return True
-    return child_abs.startswith(parent_abs + os.sep)
-
-
-def list_agents(agents: Dict[str, AgentState]) -> Dict[str, Any]:
-    summary = []
-    for name in sorted(agents.keys()):
-        agent = agents[name]
-        summary.append(
-            {
-                "name": agent.name,
-                "role": agent.role,
-                "folder": agent.folder_path,
-            }
-        )
-    return {"agents": summary}
-
 
 def run_agent_turn(
     client: OpenAI,
