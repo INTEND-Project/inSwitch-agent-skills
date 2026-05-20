@@ -75,6 +75,8 @@ from core.runner import AgentTurnRunner
 from core.http_server import serve as serve_http
 from core.logging_hub import LOG_STREAM_HUB
 
+from core.cli import run_repl
+
 def load_api_key() -> str:
     key = os.getenv("OPENAI_API_KEY", "").strip()
     if not key:
@@ -117,70 +119,7 @@ def main() -> None:
          )
         return
 
-    print("Agent ready. Type :help for commands.")
-    print(f"Model: {MODEL}")
-
-    while True:
-        try:
-            user_input = input("\n> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nBye.")
-            break
-
-        if not user_input:
-            continue
-        if user_input in {":exit", ":quit"}:
-            print("Bye.")
-            break
-        if user_input == ":help":
-            print("Commands: :help, :skills, :agents, :kill <agent>, :restart, :verbose, :exit")
-            continue
-        if user_input == ":skills":
-            print(list_folder_overview("."))
-            continue
-        if user_input == ":agents":
-            print(json.dumps(list_agents(agents), indent=2))
-            continue
-        if user_input.startswith(":kill "):
-            target = user_input.split(" ", 1)[1].strip()
-            if not target:
-                print("Usage: :kill <agent_name>")
-                continue
-            if target == "captain":
-                print("Cannot kill captain.")
-                continue
-            if target in agents:
-                del agents[target]
-                log_event(
-                    "agent_killed",
-                    {
-                        "agent": target,
-                        "killed_by": "user",
-                    },
-                )
-                print(f"Killed agent: {target}")
-            else:
-                print(f"No such agent: {target}")
-            continue
-        if user_input == ":verbose":
-            manager.verbose = not manager.verbose
-            print(f"Verbose mode: {'on' if manager.verbose else 'off'}")
-            continue
-        if user_input == ":restart":
-            restart_result = restart_agent_session(manager, triggered_by="user")
-            killed_agents = ", ".join(restart_result["killed_agents"])
-            print(f"Restarted agent session. Killed agents: {killed_agents}. Created clean captain.")
-            continue
-
-        # CLI interactive mode: wrap each input in a root trace too.
-        with start_trace("agent.request", {
-            "intent.text": user_input[:200],
-            "source": "cli",
-        }) as handle:
-            text = runner.process_user_input(manager, user_input)
-            handle.set("response.length", len(text or ""))
-
-        print(text or "(no response)")
+    run_repl(manager, runner)
 
 
 if __name__ == "__main__":
