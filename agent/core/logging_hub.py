@@ -67,8 +67,6 @@ def log_event(event_type: str, payload: Dict[str, Any]) -> None:
     file. Errors during the file write are not caught here — the original
     behaviour was to fail loudly, and we preserve it.
     """
-    import sys
-    print(f"[LOG_EVENT] {event_type} -> LOG_STREAM_HUB id={id(LOG_STREAM_HUB)} subscribers={len(LOG_STREAM_HUB._subscribers)}", flush=True, file=sys.stderr)   
     os.makedirs(LOGS_DIR, exist_ok=True)
     timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     date_str = datetime.utcnow().date().isoformat()

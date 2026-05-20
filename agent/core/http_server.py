@@ -133,8 +133,6 @@ def make_handler_class(
         # --- SSE ---------------------------------------------------
 
         def _handle_log_stream(self) -> None:
-            import sys
-            print(f"[SSE] handler enter, hub id={id(hub)}", flush=True, file=sys.stderr)
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
@@ -144,28 +142,23 @@ def make_handler_class(
             self.end_headers()
 
             queue = hub.subscribe()
-            print(f"[SSE] subscribed, hub now has {len(hub._subscribers)} subscribers, queue id={id(queue)}", flush=True, file=sys.stderr)
             try:
                 self.wfile.write(b": connected\n\n")
                 self.wfile.flush()
                 while True:
                     try:
                         message = queue.get(timeout=15)
-                        print(f"[SSE] got message len={len(message)}", flush=True, file=sys.stderr)
                         safe_message = message.replace("\n", "\\n")
                         payload = f"data: {safe_message}\n\n".encode("utf-8")
                         self.wfile.write(payload)
                         self.wfile.flush()
                     except Empty:
-                        print(f"[SSE] empty, sending keep-alive, hub has {len(hub._subscribers)} subscribers", flush=True, file=sys.stderr)
                         self.wfile.write(b": keep-alive\n\n")
                         self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
-                print("[SSE] broken pipe", flush=True, file=sys.stderr)
                 pass
             finally:
                 hub.unsubscribe(queue)
-                print(f"[SSE] unsubscribed, hub now has {len(hub._subscribers)} subscribers", flush=True, file=sys.stderr)
 
         # --- silence default access logging ------------------------
 
