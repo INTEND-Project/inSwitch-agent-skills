@@ -690,10 +690,31 @@ body {
   animation: float-in 0.25s ease-out;
 }
 
+.message-meta {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 0.35rem;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.message-meta time {
+  font-weight: 600;
+  text-transform: none;
+}
+
 .message-row.user .message-bubble {
   background: #dcfce7;
   color: #0f172a;
   border-bottom-right-radius: 0.3rem;
+}
+
+.message-row.user .message-meta {
+  color: #166534;
 }
 
 .message-row.agent .message-bubble {
@@ -706,6 +727,10 @@ body {
   background: #fef9c3;
   color: #92400e;
   border-bottom-left-radius: 0.3rem;
+}
+
+.message-row.system .message-meta {
+  color: #a16207;
 }
 
 .message-bubble p {

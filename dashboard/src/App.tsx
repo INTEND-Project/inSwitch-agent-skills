@@ -26,6 +26,7 @@ type Message = {
   id: string;
   role: 'user' | 'agent' | 'system';
   text: string;
+  createdAt: string;
   traceId?: string;
 };
 
@@ -75,11 +76,24 @@ const initialMessages: Message[] = [
   {
     id: 'welcome',
     role: 'system',
-    text: 'Hello! Ask me anything about the system and I will respond.'
+    text: 'Hello! Ask me anything about the system and I will respond.',
+    createdAt: new Date().toISOString()
   }
 ];
 
 const isObservabilityPath = (pathname: string) => pathname.startsWith('/observability');
+
+const formatMessageTimestamp = (timestamp: string) => {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
+};
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<'chat' | 'observability'>(() =>
@@ -459,7 +473,8 @@ const App: React.FC = () => {
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
-      text: trimmed
+      text: trimmed,
+      createdAt: new Date().toISOString()
     };
 
     setInput('');
@@ -485,6 +500,7 @@ const App: React.FC = () => {
         id: `agent-${Date.now()}`,
         role: 'agent',
         text: agentText,
+        createdAt: new Date().toISOString(),
         traceId: typeof json.trace_id === 'string' ? json.trace_id : undefined
       });
     } catch (err) {
@@ -493,7 +509,8 @@ const App: React.FC = () => {
       pushMessage({
         id: `error-${Date.now()}`,
         role: 'system',
-        text: 'Something went wrong while sending your message.'
+        text: 'Something went wrong while sending your message.',
+        createdAt: new Date().toISOString()
       });
     } finally {
       setIsSending(false);
@@ -615,7 +632,8 @@ const App: React.FC = () => {
   const buildSessionMarkdown = (sessionMessages: Message[], exportedAt: Date) => {
     const sections = sessionMessages.map((message) => {
       const normalizedText = message.text.replace(/\r\n/g, '\n');
-      return `## [${message.role}]\n${normalizedText}\n\n---`;
+      const timestamp = formatMessageTimestamp(message.createdAt);
+      return `## [${message.role}]${timestamp ? ` ${timestamp}` : ''}\n${normalizedText}\n\n---`;
     });
     return `# inSwitch session — ${exportedAt.toISOString()}\n\n${sections.join('\n\n')}\n`;
   };
@@ -996,6 +1014,11 @@ const App: React.FC = () => {
                 {messages.map((message) => (
                   <div key={message.id} className={`message-row ${message.role}`}>
                     <div className="message-bubble">
+                      <div className="message-meta">
+                        <time dateTime={message.createdAt}>
+                          {formatMessageTimestamp(message.createdAt)}
+                        </time>
+                      </div>
                       {message.role === 'agent' ? (
                         <>
                           {renderMarkdown(message.text, 'markdown-content message-markdown-content')}
