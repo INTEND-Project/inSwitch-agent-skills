@@ -100,7 +100,7 @@ def revise_skill(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
         return {"error": str(exc)}
 
     backup_dir = os.path.join(folder_abs, ".skill_backups")
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+    timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S-%f") + "Z"
     backup_path = os.path.join(backup_dir, f"SKILL.{timestamp}.md")
 
     try:
