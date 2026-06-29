@@ -39,6 +39,7 @@ def build_captain_prompt(folder_overview: str, folder_skill: str) -> str:
         "This tool will create another agent with specified folder."
         "This also applies when you see the need to use a different skill - create a new agent using delegate_task tool, and appoint the folder with that skill."
         "Each sub-agent must be assigned a folder that is the same as yours or a sub-folder under yours."
+        "When the user reports a correction or improvement to make to an existing SKILL.md, call the invoke_supervisor tool and pass along the user's instruction instead of modifying the skill yourself."
     )
     sections = [base, captain_rules]
     if folder_skill:
