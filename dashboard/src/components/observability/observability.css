@@ -700,6 +700,16 @@
   background: #000000;
 }
 
+.bar-supervisor {
+  background: #7c3aed;
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.25), 0 0 10px rgba(124, 58, 237, 0.45);
+}
+
+.bar-supervisor-error {
+  background: #5b21b6;
+  box-shadow: 0 0 0 1px rgba(91, 33, 182, 0.3), 0 0 10px rgba(91, 33, 182, 0.5);
+}
+
 .raw-spans {
   border: 1px solid rgba(20, 202, 212, 0.32);
   border-radius: 0.9rem;

@@ -37,8 +37,10 @@ type GraphNodeData = {
   highlighted?: boolean;
 };
 
-const buildNodeClass = (kind: GraphKind, highlighted?: boolean) =>
-  `graph-node ${kind}${highlighted ? ' highlighted' : ''}`;
+const buildNodeClass = (kind: GraphKind, highlighted?: boolean, label?: string) =>
+  `graph-node ${kind}${label === 'supervisor' ? ' supervisor' : ''}${
+    highlighted ? ' highlighted' : ''
+  }`;
 
 const normalizeCodeLanguage = (className?: string) => {
   const match = /language-([a-zA-Z0-9_-]+)/.exec(className ?? '');
@@ -223,7 +225,7 @@ const App: React.FC = () => {
             ? {
                 ...node,
                 data: { ...node.data, highlighted: true },
-                className: buildNodeClass(node.data.kind, true)
+                className: buildNodeClass(node.data.kind, true, node.data.label)
               }
             : node
         )
@@ -239,7 +241,7 @@ const App: React.FC = () => {
               ? {
                   ...node,
                   data: { ...node.data, highlighted: false },
-                  className: buildNodeClass(node.data.kind, false)
+                  className: buildNodeClass(node.data.kind, false, node.data.label)
                 }
               : node
           )
@@ -302,7 +304,7 @@ const App: React.FC = () => {
         position,
         data: { label: name, kind },
         type: 'default',
-        className: buildNodeClass(kind, false)
+        className: buildNodeClass(kind, false, name)
       };
       setNodes((prev) => [...prev, newNode]);
     },
@@ -404,6 +406,19 @@ const App: React.FC = () => {
             buildNodeId('agent', payload.from),
             buildNodeId('agent', payload.to),
             'sends'
+          );
+        }
+        return;
+      }
+
+      if (event === 'skill_revised') {
+        ensureNode(payload.agent ?? 'supervisor', 'agent');
+        ensureNode(payload.folder, 'skill');
+        if (payload.folder) {
+          ensureEdge(
+            buildNodeId('agent', payload.agent ?? 'supervisor'),
+            buildNodeId('skill', payload.folder),
+            'revises'
           );
         }
       }
@@ -788,9 +803,10 @@ const App: React.FC = () => {
     delete params.event;
     delete params.ts;
 
-    const classifyParam = (key: string) => {
+    const classifyParam = (key: string, value: any) => {
       const normalized = key.toLowerCase();
       if (normalized === 'agent' || normalized === 'from' || normalized === 'to' || normalized === 'created_by') {
+        if (String(value) === 'supervisor') return 'agent-supervisor';
         return 'agent';
       }
       if (normalized === 'tool') {
@@ -798,6 +814,9 @@ const App: React.FC = () => {
       }
       if (normalized === 'skill') {
         return 'skill';
+      }
+      if (eventType === 'skill_revised' && (normalized === 'folder' || normalized === 'backup_path')) {
+        return 'skill-revised';
       }
       return 'default';
     };
@@ -861,9 +880,14 @@ const App: React.FC = () => {
     };
 
     return (
-      <div key={`${entry}-${index}`} className="log-card">
+      <div
+        key={`${entry}-${index}`}
+        className={`log-card ${eventType === 'skill_revised' ? 'log-card-skill-revised' : ''}`}
+      >
         <div className="log-card-header">
-          <span className="log-event">{eventType}</span>
+          <span className={`log-event ${eventType === 'skill_revised' ? 'log-event-skill-revised' : ''}`}>
+            {eventType}
+          </span>
           {timestamp && <span className="log-ts">{timestamp}</span>}
         </div>
         <div className="log-params">
@@ -876,7 +900,7 @@ const App: React.FC = () => {
               </span>
             );
             return (
-              <span key={key} className={`log-param log-param-${classifyParam(key)}`}>
+              <span key={key} className={`log-param log-param-${classifyParam(key, value)}`}>
                 <span className="log-key">{key}:</span>
                 {formatted.truncated || formatted.expandable ? (
                   <button

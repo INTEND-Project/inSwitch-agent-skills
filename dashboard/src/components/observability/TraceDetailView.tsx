@@ -38,7 +38,15 @@ const formatDuration = (durationMs: number) => {
   return `${Math.round(durationMs)}ms`;
 };
 
-const getBarToneClass = (name: string, status: "ok" | "error") => {
+const getSpanAgentRole = (span: TraceSpan) => {
+  const role = span.attributes["agent.role"];
+  return typeof role === "string" ? role : null;
+};
+
+const getBarToneClass = (span: TraceSpan) => {
+  const { name, status } = span;
+  if (getSpanAgentRole(span) === "supervisor")
+    return status === "error" ? "bar-supervisor-error" : "bar-supervisor";
   if (name.startsWith("gen_ai."))
     return status === "error" ? "bar-gen-ai-error" : "bar-gen-ai";
   if (name.startsWith("tool."))
@@ -410,7 +418,7 @@ const TraceDetailView: React.FC<TraceDetailViewProps> = ({
                           </div>
                           <div className="waterfall-track">
                             <div
-                              className={`waterfall-bar ${getBarToneClass(span.name, span.status)}`}
+                              className={`waterfall-bar ${getBarToneClass(span)}`}
                               style={{
                                 left: `${Math.max(0, Math.min(span.leftPct, 100))}%`,
                                 width: `${Math.max(Math.min(span.widthPct, 100), 0.35)}%`,
