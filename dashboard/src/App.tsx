@@ -86,7 +86,7 @@ const isObservabilityPath = (pathname: string) => pathname.startsWith('/observab
 const formatMessageTimestamp = (timestamp: string) => {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'short',
     day: '2-digit',
