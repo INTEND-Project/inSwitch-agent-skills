@@ -8,18 +8,62 @@ from typing import Any, Dict
 from tracing import start_span
 
 from core.agent import AgentState
-from core.config import SUPERVISOR_DIR
-from core.fs import normalize_folder_path, resolve_folder_abs
+from core.config import SUPERVISOR_DIR, WORKSPACE_DIR
+from core.fs import normalize_folder_path, read_text_file, resolve_folder_abs
 from core.logging_hub import log_event
 from core.skills import extract_frontmatter_name, load_folder_skill
 from core.tools import tool, ToolContext
+
+
+def _resolve_workspace_skill(folder_path: str) -> tuple[str, str, str]:
+    normalized_folder = normalize_folder_path(folder_path)
+    folder_abs = resolve_folder_abs(normalized_folder)
+    skill_path = os.path.abspath(os.path.join(folder_abs, "SKILL.md"))
+    workspace_root = os.path.abspath(WORKSPACE_DIR)
+    if not skill_path.startswith(workspace_root + os.sep):
+        raise ValueError("Target SKILL.md must be under /workspace.")
+    return normalized_folder, folder_abs, skill_path
+
+
+@tool(
+    name="read_skill",
+    description=(
+        "Read the current SKILL.md for a folder under /workspace. "
+        "Folder paths must be relative to /workspace."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "folder_path": {
+                "type": "string",
+                "description": "Folder path relative to /workspace.",
+            },
+        },
+        "required": ["folder_path"],
+    },
+    supervisor_allowed=True,
+)
+def read_skill(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
+    folder_path = args["folder_path"]
+    try:
+        normalized_folder, _, skill_path = _resolve_workspace_skill(
+            folder_path
+        )
+        current_content = read_text_file(skill_path)
+    except Exception as exc:
+        return {"error": str(exc)}
+    return {
+        "folder": normalized_folder,
+        "path": skill_path,
+        "content": current_content,
+    }
 
 
 @tool(
     name="revise_skill",
     description=(
         "Revise a targeted /workspace SKILL.md after creating a mandatory "
-        "backup. Captain-only."
+        "backup."
     ),
     parameters={
         "type": "object",
@@ -48,15 +92,12 @@ def revise_skill(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
     change_summary = args["change_summary"]
 
     try:
-        normalized_folder = normalize_folder_path(folder_path)
-        folder_abs = resolve_folder_abs(normalized_folder)
+        normalized_folder, folder_abs, skill_path = _resolve_workspace_skill(
+            folder_path
+        )
+        previous_content = read_text_file(skill_path)
     except Exception as exc:
         return {"error": str(exc)}
-
-    skill_path = os.path.abspath(os.path.join(folder_abs, "SKILL.md"))
-    workspace_root = os.path.abspath("/workspace")
-    if not skill_path.startswith(workspace_root + os.sep):
-        return {"error": "Target SKILL.md must be under /workspace."}
 
     backup_dir = os.path.join(folder_abs, ".skill_backups")
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
@@ -103,6 +144,7 @@ def revise_skill(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
         "status": "ok",
         "path": skill_path,
         "backup_path": backup_path,
+        "previous_content": previous_content,
         "invalidated_agents": invalidated_agents,
     }
 

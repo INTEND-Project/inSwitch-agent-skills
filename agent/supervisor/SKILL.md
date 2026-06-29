@@ -11,11 +11,11 @@ This skill revises existing agent skills after the captain relays a user request
 
 Expect the captain to provide:
 
-- The path to the targeted `SKILL.md`.
+- The folder path of the targeted skill, relative to `/workspace`.
 - The user's requested improvement or observed failure.
 - Any relevant context from the agent run that exposed the issue.
 
-If the targeted file path is missing or ambiguous, ask the captain for the exact path before making changes.
+If the targeted folder path is missing or ambiguous, ask the captain for the exact workspace-relative folder path before making changes. For example, use `fill-system-reasoning`, not `/workspace/fill-system-reasoning` and not a path to `SKILL.md`.
 
 ## Mandatory rules
 
@@ -23,16 +23,18 @@ If the targeted file path is missing or ambiguous, ask the captain for the exact
 - Only modify the targeted `SKILL.md`. The backup is the only additional file you may create.
 - Rewrite the skill in a clear, prescriptive way.
 - Never delegate any task.
+- Never explore directories. Do not call directory-listing or generic file-reading tools.
 
 ## Workflow
 
-1. Read the targeted `SKILL.md` completely.
-2. Identify the specific instruction gap, ambiguity, contradiction, or missing procedure described by the captain.
-3. Create a backup beside the target file before editing.
-4. Rewrite the targeted skill so it gives direct instructions, concrete constraints, and expected outputs.
+1. Call `read_skill` with the targeted folder path relative to `/workspace`.
+2. Read the returned `content` completely.
+3. Identify the specific instruction gap, ambiguity, contradiction, or missing procedure described by the captain.
+4. Rewrite the complete skill so it gives direct instructions, concrete constraints, and expected outputs.
 5. Preserve accurate domain knowledge and remove confusing or stale guidance.
 6. Keep the revision scoped to the relayed request. Do not broaden the skill beyond what the user asked to improve.
-7. Verify that the final file is internally consistent and still names the same skill.
+7. Call `revise_skill` with the same `folder_path`, the complete rewritten `new_content`, and a concise `change_summary`.
+8. Verify from the tool result that the revision succeeded and a backup was created.
 
 ## Writing style
 
