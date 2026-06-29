@@ -5,8 +5,13 @@ import shutil
 from datetime import datetime
 from typing import Any, Dict
 
+from tracing import start_span
+
+from core.agent import AgentState
+from core.config import SUPERVISOR_DIR
 from core.fs import normalize_folder_path, resolve_folder_abs
 from core.logging_hub import log_event
+from core.skills import extract_frontmatter_name, load_folder_skill
 from core.tools import tool, ToolContext
 
 
@@ -99,3 +104,102 @@ def revise_skill(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
         "backup_path": backup_path,
         "invalidated_agents": invalidated_agents,
     }
+
+
+@tool(
+    name="invoke_supervisor",
+    description=(
+        "Ask the supervisor agent to revise or improve a targeted SKILL.md "
+        "according to a user-requested skill change. Captain-only."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "instruction": {
+                "type": "string",
+                "description": "Skill change requested by the user.",
+            },
+        },
+        "required": ["instruction"],
+    },
+    captain_only=True,
+)
+def invoke_supervisor(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
+    if ctx.agent.role != "captain":
+        return {"error": "Only the captain can invoke the supervisor."}
+
+    instruction = args["instruction"]
+    supervisor = ctx.agents.get("supervisor")
+    new_supervisor = False
+    if supervisor is None:
+        supervisor = AgentState(
+            name="supervisor",
+            role="supervisor",
+            folder_path=SUPERVISOR_DIR,
+        )
+        ctx.agents["supervisor"] = supervisor
+        new_supervisor = True
+    elif supervisor.role != "supervisor":
+        return {"error": "Agent name 'supervisor' is already used."}
+
+    if supervisor.folder_path != SUPERVISOR_DIR:
+        supervisor.folder_path = SUPERVISOR_DIR
+        supervisor.folder_skill = None
+        supervisor.skill_name = None
+        supervisor.last_response_id = None
+
+    if new_supervisor:
+        log_event(
+            "agent_created",
+            {
+                "agent": supervisor.name,
+                "created_by": ctx.agent.name,
+                "folder": supervisor.folder_path,
+                "role": supervisor.role,
+            },
+        )
+
+    if supervisor.folder_skill is None:
+        try:
+            supervisor.folder_skill = load_folder_skill(supervisor.folder_path)
+        except Exception as exc:
+            if new_supervisor:
+                del ctx.agents["supervisor"]
+            return {"error": str(exc)}
+        supervisor.skill_name = (
+            extract_frontmatter_name(supervisor.folder_skill)
+            or supervisor.folder_path
+        )
+        log_event(
+            "skill_loaded",
+            {"agent": supervisor.name, "skill": supervisor.skill_name},
+        )
+
+    log_event(
+        "agent_message",
+        {"from": ctx.agent.name, "to": supervisor.name, "content": instruction},
+    )
+
+    with start_span(
+        "agent.turn",
+        {
+            "agent.name": "supervisor",
+            "agent.role": "supervisor",
+            "agent.skill": supervisor.skill_name or "",
+            "agent.folder": supervisor.folder_path or "",
+            "delegated_by": ctx.agent.name,
+        },
+    ):
+        response_text = ctx.runner(
+            agent=supervisor,
+            user_input=instruction,
+            folder_overview="Current folder skill: SKILL.md present",
+            folder_skill=supervisor.folder_skill or "",
+            agents=ctx.agents,
+        )
+
+    log_event(
+        "agent_message",
+        {"from": supervisor.name, "to": ctx.agent.name, "content": response_text},
+    )
+    return {"agent_name": supervisor.name, "response": response_text}
