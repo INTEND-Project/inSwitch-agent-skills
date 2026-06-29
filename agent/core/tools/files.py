@@ -25,6 +25,7 @@ from core.tools import tool, ToolContext
         },
         "required": ["path"],
     },
+    supervisor_allowed=True,
 )
 def read_file(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
     path = args.get("path", "")
@@ -76,6 +77,7 @@ def write_file(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
             }
         },
     },
+    supervisor_allowed=True,
 )
 def list_dir(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
     # Same convention as the other file tools: resolve_agent_path returns

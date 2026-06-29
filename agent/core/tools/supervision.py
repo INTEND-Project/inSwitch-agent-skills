@@ -40,6 +40,7 @@ from core.tools import tool, ToolContext
         "required": ["folder_path", "new_content", "change_summary"],
     },
     captain_only=True,
+    supervisor_allowed=True,
 )
 def revise_skill(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
     folder_path = args["folder_path"]

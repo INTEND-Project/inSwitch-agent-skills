@@ -11,7 +11,8 @@ JSON Schema (used to build the OpenAI tools list) and the callable
 implementation in a single registry entry.
 
 Public API:
-    @tool(name, description, parameters, captain_only=False)
+    @tool(name, description, parameters, captain_only=False,
+          supervisor_allowed=False)
         Decorator that registers a tool implementation.
 
     ToolContext
@@ -19,7 +20,8 @@ Public API:
         full agent map, the OpenAI client, the model name, the captain's
         verbosity flag, and the runner callable used by delegate_task.
 
-    get_schemas(include_delegate: bool) -> list[dict]
+    get_schemas(include_delegate: bool, include_supervisor: bool = False)
+        -> list[dict]
         Returns the JSON Schema list to feed to OpenAI Responses API.
 
     dispatch(name: str, args: dict, ctx: ToolContext) -> dict
@@ -93,6 +95,7 @@ class _ToolSpec:
     parameters: Dict[str, Any]
     impl: Callable[[Dict[str, Any], ToolContext], Dict[str, Any]]
     captain_only: bool = False
+    supervisor_allowed: bool = False
 
     def schema(self) -> Dict[str, Any]:
         """Return the JSON Schema entry consumed by the Responses API."""
@@ -113,6 +116,7 @@ def tool(
     description: str,
     parameters: Dict[str, Any],
     captain_only: bool = False,
+    supervisor_allowed: bool = False,
 ) -> Callable[
     [Callable[[Dict[str, Any], ToolContext], Dict[str, Any]]],
     Callable[[Dict[str, Any], ToolContext], Dict[str, Any]],
@@ -137,6 +141,7 @@ def tool(
             parameters=parameters,
             impl=impl,
             captain_only=captain_only,
+            supervisor_allowed=supervisor_allowed,
         )
         return impl
 
@@ -147,15 +152,23 @@ def tool(
 # Public lookup helpers
 # ---------------------------------------------------------------------------
 
-def get_schemas(include_delegate: bool) -> List[Dict[str, Any]]:
+def get_schemas(
+    include_delegate: bool,
+    include_supervisor: bool = False,
+) -> List[Dict[str, Any]]:
     """Return the schema list for the OpenAI Responses ``tools`` parameter.
 
     ``include_delegate=True`` is used for the captain (which can spawn
     sub-agents); workers get the schema list with captain-only tools
-    filtered out.
+    filtered out. ``include_supervisor=True`` returns only tools explicitly
+    marked as safe for the supervisor role.
     """
     schemas: List[Dict[str, Any]] = []
     for spec in _REGISTRY.values():
+        if include_supervisor and not include_delegate:
+            if spec.supervisor_allowed:
+                schemas.append(spec.schema())
+            continue
         if spec.captain_only and not include_delegate:
             continue
         schemas.append(spec.schema())
