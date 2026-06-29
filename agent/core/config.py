@@ -11,6 +11,7 @@ import os
 CODE_DIR: str = os.getenv("AGENT_CODE_DIR", "/agent")
 WORKSPACE_DIR: str = os.getenv("AGENT_WORKSPACE_DIR", "/workspace")
 LOGS_DIR: str = os.getenv("AGENT_LOGS_DIR", "/logs")
+SUPERVISOR_DIR: str = os.getenv("AGENT_SUPERVISOR_DIR", "/agent/supervisor")
 
 MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
@@ -27,4 +28,4 @@ HTTP_PORT_DEFAULT: int = int(os.getenv("AGENT_HTTP_PORT", "8085"))
 
 # Paths the agent is allowed to read/write. Anything outside these roots is
 # rejected by safe_abs_path (see core.fs).
-ALLOWED_ROOTS: list[str] = [WORKSPACE_DIR, CODE_DIR, LOGS_DIR]
+ALLOWED_ROOTS: list[str] = [WORKSPACE_DIR, CODE_DIR, LOGS_DIR, SUPERVISOR_DIR]
