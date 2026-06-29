@@ -5,7 +5,7 @@ import shutil
 from datetime import datetime
 from typing import Any, Dict
 
-from core.fs import resolve_folder_abs
+from core.fs import normalize_folder_path, resolve_folder_abs
 from core.logging_hub import log_event
 from core.tools import tool, ToolContext
 
@@ -42,7 +42,8 @@ def revise_skill(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
     change_summary = args["change_summary"]
 
     try:
-        folder_abs = resolve_folder_abs(folder_path)
+        normalized_folder = normalize_folder_path(folder_path)
+        folder_abs = resolve_folder_abs(normalized_folder)
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -67,6 +68,23 @@ def revise_skill(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
     except Exception as exc:
         return {"error": f"Failed to write SKILL.md: {exc}"}
 
+    invalidated_agents = 0
+    for agent in ctx.agents.values():
+        if agent.folder_path is None:
+            continue
+        try:
+            agent_folder = normalize_folder_path(agent.folder_path)
+        except Exception:
+            continue
+        if agent_folder != normalized_folder:
+            continue
+        agent.folder_skill = None
+        agent.skill_name = None
+        # Reset last_response_id so the old SKILL.md does not remain
+        # implicitly available through the OpenAI previous_response_id chain.
+        agent.last_response_id = None
+        invalidated_agents += 1
+
     log_event(
         "skill_revised",
         {
@@ -75,4 +93,9 @@ def revise_skill(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
             "backup_path": backup_path,
         },
     )
-    return {"status": "ok", "path": skill_path, "backup_path": backup_path}
+    return {
+        "status": "ok",
+        "path": skill_path,
+        "backup_path": backup_path,
+        "invalidated_agents": invalidated_agents,
+    }
