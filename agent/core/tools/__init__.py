@@ -178,4 +178,4 @@ def dispatch(name: str, args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any
 # Auto-import all tool modules so the registry is populated when callers
 # do ``from core.tools import dispatch``. Listed explicitly (rather than
 # via pkgutil) so the import graph is obvious from a grep.
-from core.tools import shell, files, http, delegation  # noqa: E402,F401
+from core.tools import shell, files, http, delegation, supervision  # noqa: E402,F401
