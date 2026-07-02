@@ -3,8 +3,9 @@
 Two dataclasses sit at the heart of the runtime:
 
   - ``AgentState`` carries everything about one agent: its name, role
-    (``captain`` or ``worker``), bound folder, cached SKILL.md content,
-    and the previous OpenAI response id (for conversation continuity).
+    (``captain``, ``worker``, or ``supervisor``), bound folder, cached
+    SKILL.md content, and the previous OpenAI response id (for conversation
+    continuity).
 
   - ``AgentManager`` owns the agent roster, the OpenAI client, and the
     runtime verbosity flag. It exposes ``captain()`` as a convenience

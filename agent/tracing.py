@@ -60,6 +60,10 @@ _current_trace: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
 )
 
 
+def current_trace_id() -> Optional[str]:
+    return _current_trace.get()
+
+
 # ---------------------------------------------------------------------------
 # Storage
 # ---------------------------------------------------------------------------

@@ -33,7 +33,11 @@ from core.agent import AgentManager, AgentState, restart_agent_session
 from core.config import MAX_LOG_CHARS, MODEL
 from core.fs import list_folder_overview
 from core.logging_hub import log_event
-from core.prompts import build_captain_prompt, build_worker_prompt
+from core.prompts import (
+    build_captain_prompt,
+    build_supervisor_prompt,
+    build_worker_prompt,
+)
 from core.skills import extract_frontmatter_name, load_folder_skill
 from core.tools import ToolContext, dispatch, get_schemas
 
@@ -195,6 +199,18 @@ class AgentTurnRunner:
 
         if not agent.folder_path or agent.folder_skill is None:
             return None, []
+
+        if agent.role == "supervisor":
+            system_prompt = build_supervisor_prompt(
+                agent.folder_path,
+                agent.folder_skill,
+                folder_overview,
+            )
+            tools = get_schemas(
+                include_delegate=False,
+                include_supervisor=True,
+            )
+            return system_prompt, tools
 
         system_prompt = build_worker_prompt(
             agent.folder_path,

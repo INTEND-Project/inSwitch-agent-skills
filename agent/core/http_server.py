@@ -22,12 +22,14 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from queue import Empty
 from typing import Any, Dict, Type, TYPE_CHECKING
+from urllib.parse import parse_qs, urlparse
 
 from tracing import start_trace
 from trace_api import handle_trace_request
 
 from core.agent import list_agents
 from core.fs import list_folder_overview
+from core.tools import supervision
 
 if TYPE_CHECKING:
     from core.agent import AgentManager
@@ -81,6 +83,30 @@ def make_handler_class(
             self.end_headers()
 
         def do_POST(self) -> None:
+            if self.path == "/skills/restore":
+                length = int(self.headers.get("Content-Length", "0"))
+                raw = self.rfile.read(length) if length > 0 else b""
+                try:
+                    data = json.loads(raw.decode("utf-8")) if raw else {}
+                except json.JSONDecodeError:
+                    self._send_json(400, {"error": "Invalid JSON body."})
+                    return
+
+                folder = data.get("folder")
+                backup = data.get("backup")
+                if not isinstance(folder, str) or not isinstance(backup, str):
+                    self._send_json(
+                        400,
+                        {"error": "Missing 'folder' or 'backup' string."},
+                    )
+                    return
+
+                result = supervision.restore_revision(
+                    folder, backup, manager.agents
+                )
+                self._send_json(400 if "error" in result else 200, result)
+                return
+
             if self.path != "/intent":
                 self._send_json(404, {"error": "Not found."})
                 return
@@ -104,15 +130,29 @@ def make_handler_class(
                     manager, user_input.strip()
                 )
                 handle.set("response.length", len(response_text))
+                revisions = supervision.pop_revisions(handle.trace_id)
 
             self._send_json(
                 200,
-                {"response": response_text, "trace_id": handle.trace_id},
+                {
+                    "response": response_text,
+                    "trace_id": handle.trace_id,
+                    "skill_revisions": revisions,
+                },
             )
 
         def do_GET(self) -> None:
-            if self.path == "/skills":
+            parsed_url = urlparse(self.path)
+            if parsed_url.path == "/skills":
                 self._send_json(200, {"skills": list_folder_overview(".")})
+                return
+            if parsed_url.path == "/skills/revision":
+                params = parse_qs(parsed_url.query)
+                result = supervision.read_revision(
+                    params.get("folder", [""])[0],
+                    params.get("backup", [""])[0],
+                )
+                self._send_json(400 if "error" in result else 200, result)
                 return
             if self.path == "/agents":
                 self._send_json(200, list_agents(manager.agents))

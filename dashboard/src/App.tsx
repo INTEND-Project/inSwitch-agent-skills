@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { prism } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -26,7 +27,19 @@ type Message = {
   id: string;
   role: 'user' | 'agent' | 'system';
   text: string;
+  createdAt: string;
   traceId?: string;
+  skillRevisions?: SkillRevision[];
+};
+
+type SkillRevision = {
+  folder: string;
+  backup: string;
+};
+
+type SkillRevisionDetail = SkillRevision & {
+  old_content: string;
+  new_content: string;
 };
 
 type GraphKind = 'agent' | 'skill' | 'tool';
@@ -37,8 +50,10 @@ type GraphNodeData = {
   highlighted?: boolean;
 };
 
-const buildNodeClass = (kind: GraphKind, highlighted?: boolean) =>
-  `graph-node ${kind}${highlighted ? ' highlighted' : ''}`;
+const buildNodeClass = (kind: GraphKind, highlighted?: boolean, label?: string) =>
+  `graph-node ${kind}${label === 'supervisor' ? ' supervisor' : ''}${
+    highlighted ? ' highlighted' : ''
+  }`;
 
 const normalizeCodeLanguage = (className?: string) => {
   const match = /language-([a-zA-Z0-9_-]+)/.exec(className ?? '');
@@ -69,15 +84,31 @@ const detectCodeLanguage = (code: string) => {
   return 'text';
 };
 
+const normalizeSkillDiffContent = (content: string) =>
+  content.replace(/\r\n/g, '\n').split('\n').map((line) => line.replace(/\s+$/g, '')).join('\n');
+
 const initialMessages: Message[] = [
   {
     id: 'welcome',
     role: 'system',
-    text: 'Hello! Ask me anything about the system and I will respond.'
+    text: 'Hello! Ask me anything about the system and I will respond.',
+    createdAt: new Date().toISOString()
   }
 ];
 
 const isObservabilityPath = (pathname: string) => pathname.startsWith('/observability');
+
+const formatMessageTimestamp = (timestamp: string) => {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
+};
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<'chat' | 'observability'>(() =>
@@ -90,6 +121,12 @@ const App: React.FC = () => {
   const [logs, setLogs] = useState<string[]>([]);
   const [logStatus, setLogStatus] = useState<'connected' | 'disconnected'>('disconnected');
   const [selectedValue, setSelectedValue] = useState<unknown | null>(null);
+  const [reviewRevision, setReviewRevision] = useState<SkillRevision | null>(null);
+  const [revisionDetail, setRevisionDetail] = useState<SkillRevisionDetail | null>(null);
+  const [revisionLoading, setRevisionLoading] = useState(false);
+  const [revisionError, setRevisionError] = useState<string | null>(null);
+  const [revisionRestoring, setRevisionRestoring] = useState(false);
+  const [revisionConfirmation, setRevisionConfirmation] = useState<string | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -108,6 +145,17 @@ const App: React.FC = () => {
     () => messages.filter((message) => message.role !== 'system').length > 0,
     [messages]
   );
+
+  const normalizeSkillRevisions = (value: unknown): SkillRevision[] => {
+    if (!Array.isArray(value)) return [];
+    return value.filter(
+      (item): item is SkillRevision =>
+        Boolean(item) &&
+        typeof item === 'object' &&
+        typeof (item as SkillRevision).folder === 'string' &&
+        typeof (item as SkillRevision).backup === 'string'
+    );
+  };
 
   const renderMarkdown = useCallback(
     (content: string, className: string) => (
@@ -178,6 +226,40 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!reviewRevision) return;
+
+    const controller = new AbortController();
+    const loadRevision = async () => {
+      setRevisionDetail(null);
+      setRevisionError(null);
+      setRevisionConfirmation(null);
+      setRevisionLoading(true);
+
+      try {
+        const url = `${AGENT_BASE}/skills/revision?folder=${encodeURIComponent(
+          reviewRevision.folder
+        )}&backup=${encodeURIComponent(reviewRevision.backup)}`;
+        const response = await fetch(url, { signal: controller.signal });
+        const json = await response.json();
+        if (!response.ok || json?.error) {
+          throw new Error(json?.error ?? `Request failed (${response.status})`);
+        }
+        setRevisionDetail(json as SkillRevisionDetail);
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        setRevisionError(err instanceof Error ? err.message : 'Unable to load skill revision.');
+      } finally {
+        setRevisionLoading(false);
+      }
+    };
+
+    loadRevision();
+    return () => {
+      controller.abort();
+    };
+  }, [reviewRevision]);
+
+  useEffect(() => {
     const syncFromLocation = () => {
       const path = window.location.pathname;
       if (isObservabilityPath(path)) {
@@ -223,7 +305,7 @@ const App: React.FC = () => {
             ? {
                 ...node,
                 data: { ...node.data, highlighted: true },
-                className: buildNodeClass(node.data.kind, true)
+                className: buildNodeClass(node.data.kind, true, node.data.label)
               }
             : node
         )
@@ -239,7 +321,7 @@ const App: React.FC = () => {
               ? {
                   ...node,
                   data: { ...node.data, highlighted: false },
-                  className: buildNodeClass(node.data.kind, false)
+                  className: buildNodeClass(node.data.kind, false, node.data.label)
                 }
               : node
           )
@@ -302,7 +384,7 @@ const App: React.FC = () => {
         position,
         data: { label: name, kind },
         type: 'default',
-        className: buildNodeClass(kind, false)
+        className: buildNodeClass(kind, false, name)
       };
       setNodes((prev) => [...prev, newNode]);
     },
@@ -406,6 +488,19 @@ const App: React.FC = () => {
             'sends'
           );
         }
+        return;
+      }
+
+      if (event === 'skill_revised') {
+        ensureNode(payload.agent ?? 'supervisor', 'agent');
+        ensureNode(payload.folder, 'skill');
+        if (payload.folder) {
+          ensureEdge(
+            buildNodeId('agent', payload.agent ?? 'supervisor'),
+            buildNodeId('skill', payload.folder),
+            'revises'
+          );
+        }
       }
     },
     [buildNodeId, ensureEdge, ensureNode]
@@ -444,7 +539,8 @@ const App: React.FC = () => {
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
-      text: trimmed
+      text: trimmed,
+      createdAt: new Date().toISOString()
     };
 
     setInput('');
@@ -463,14 +559,21 @@ const App: React.FC = () => {
         throw new Error(`Request failed (${response.status})`);
       }
 
-      const json = (await response.json()) as { response?: string; trace_id?: string };
+      const json = (await response.json()) as {
+        response?: string;
+        trace_id?: string;
+        skill_revisions?: unknown;
+      };
       const agentText = json.response ?? 'No response received.';
+      const skillRevisions = normalizeSkillRevisions(json.skill_revisions);
 
       pushMessage({
         id: `agent-${Date.now()}`,
         role: 'agent',
         text: agentText,
-        traceId: typeof json.trace_id === 'string' ? json.trace_id : undefined
+        createdAt: new Date().toISOString(),
+        traceId: typeof json.trace_id === 'string' ? json.trace_id : undefined,
+        skillRevisions: skillRevisions.length > 0 ? skillRevisions : undefined
       });
     } catch (err) {
       console.error(err);
@@ -478,7 +581,8 @@ const App: React.FC = () => {
       pushMessage({
         id: `error-${Date.now()}`,
         role: 'system',
-        text: 'Something went wrong while sending your message.'
+        text: 'Something went wrong while sending your message.',
+        createdAt: new Date().toISOString()
       });
     } finally {
       setIsSending(false);
@@ -586,6 +690,52 @@ const App: React.FC = () => {
     setActiveView('observability');
   };
 
+  const openSkillReview = (revision: SkillRevision) => {
+    setReviewRevision(revision);
+  };
+
+  const closeSkillReview = () => {
+    if (revisionRestoring) return;
+    setReviewRevision(null);
+    setRevisionDetail(null);
+    setRevisionError(null);
+    setRevisionConfirmation(null);
+  };
+
+  const restoreSkillRevision = async () => {
+    if (!reviewRevision || revisionRestoring) return;
+
+    setRevisionRestoring(true);
+    setRevisionError(null);
+    setRevisionConfirmation(null);
+
+    try {
+      const response = await fetch(`${AGENT_BASE}/skills/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          folder: reviewRevision.folder,
+          backup: reviewRevision.backup
+        })
+      });
+      const json = await response.json();
+      if (!response.ok || json?.error) {
+        throw new Error(json?.error ?? `Request failed (${response.status})`);
+      }
+      const invalidated = Number(json?.invalidated_agents ?? 0);
+      setRevisionConfirmation(`Skill restored, ${invalidated} agent cache(s) invalidated`);
+      window.setTimeout(() => {
+        setReviewRevision(null);
+        setRevisionDetail(null);
+        setRevisionConfirmation(null);
+      }, 900);
+    } catch (err) {
+      setRevisionError(err instanceof Error ? err.message : 'Unable to restore skill revision.');
+    } finally {
+      setRevisionRestoring(false);
+    }
+  };
+
   const formatLocalFileTimestamp = (date: Date) => {
     const pad = (value: number) => String(value).padStart(2, '0');
     const year = date.getFullYear();
@@ -600,7 +750,8 @@ const App: React.FC = () => {
   const buildSessionMarkdown = (sessionMessages: Message[], exportedAt: Date) => {
     const sections = sessionMessages.map((message) => {
       const normalizedText = message.text.replace(/\r\n/g, '\n');
-      return `## [${message.role}]\n${normalizedText}\n\n---`;
+      const timestamp = formatMessageTimestamp(message.createdAt);
+      return `## [${message.role}]${timestamp ? ` ${timestamp}` : ''}\n${normalizedText}\n\n---`;
     });
     return `# inSwitch session — ${exportedAt.toISOString()}\n\n${sections.join('\n\n')}\n`;
   };
@@ -788,9 +939,10 @@ const App: React.FC = () => {
     delete params.event;
     delete params.ts;
 
-    const classifyParam = (key: string) => {
+    const classifyParam = (key: string, value: any) => {
       const normalized = key.toLowerCase();
       if (normalized === 'agent' || normalized === 'from' || normalized === 'to' || normalized === 'created_by') {
+        if (String(value) === 'supervisor') return 'agent-supervisor';
         return 'agent';
       }
       if (normalized === 'tool') {
@@ -798,6 +950,9 @@ const App: React.FC = () => {
       }
       if (normalized === 'skill') {
         return 'skill';
+      }
+      if (eventType === 'skill_revised' && (normalized === 'folder' || normalized === 'backup_path')) {
+        return 'skill-revised';
       }
       return 'default';
     };
@@ -861,9 +1016,14 @@ const App: React.FC = () => {
     };
 
     return (
-      <div key={`${entry}-${index}`} className="log-card">
+      <div
+        key={`${entry}-${index}`}
+        className={`log-card ${eventType === 'skill_revised' ? 'log-card-skill-revised' : ''}`}
+      >
         <div className="log-card-header">
-          <span className="log-event">{eventType}</span>
+          <span className={`log-event ${eventType === 'skill_revised' ? 'log-event-skill-revised' : ''}`}>
+            {eventType}
+          </span>
           {timestamp && <span className="log-ts">{timestamp}</span>}
         </div>
         <div className="log-params">
@@ -876,7 +1036,7 @@ const App: React.FC = () => {
               </span>
             );
             return (
-              <span key={key} className={`log-param log-param-${classifyParam(key)}`}>
+              <span key={key} className={`log-param log-param-${classifyParam(key, value)}`}>
                 <span className="log-key">{key}:</span>
                 {formatted.truncated || formatted.expandable ? (
                   <button
@@ -972,17 +1132,38 @@ const App: React.FC = () => {
                 {messages.map((message) => (
                   <div key={message.id} className={`message-row ${message.role}`}>
                     <div className="message-bubble">
+                      <div className="message-meta">
+                        <time dateTime={message.createdAt}>
+                          {formatMessageTimestamp(message.createdAt)}
+                        </time>
+                      </div>
                       {message.role === 'agent' ? (
                         <>
                           {renderMarkdown(message.text, 'markdown-content message-markdown-content')}
-                          {message.traceId && (
-                            <button
-                              type="button"
-                              className="trace-detail-link"
-                              onClick={() => openTraceDetailFromChat(message.traceId)}
-                            >
-                              View Trace Detail
-                            </button>
+                          {(message.traceId || message.skillRevisions) && (
+                            <div className="message-actions">
+                              {message.traceId && (
+                                <button
+                                  type="button"
+                                  className="trace-detail-link"
+                                  onClick={() => openTraceDetailFromChat(message.traceId)}
+                                >
+                                  View Trace Detail
+                                </button>
+                              )}
+                              {message.skillRevisions?.map((revision) => (
+                                <button
+                                  key={`${revision.folder}:${revision.backup}`}
+                                  type="button"
+                                  className="trace-detail-link skill-review-link"
+                                  onClick={() => openSkillReview(revision)}
+                                >
+                                  {message.skillRevisions && message.skillRevisions.length > 1
+                                    ? `Review skill: ${revision.folder}`
+                                    : 'Review skill'}
+                                </button>
+                              ))}
+                            </div>
                           )}
                         </>
                       ) : (
@@ -1061,6 +1242,73 @@ const App: React.FC = () => {
             </div>
             <div className="log-modal-body">
               {renderValueDetails(selectedValue)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeView === 'chat' && reviewRevision !== null && (
+        <div className="log-modal-overlay" onClick={closeSkillReview}>
+          <div className="log-modal skill-review-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="log-modal-header skill-review-header">
+              <div>
+                <span>Review skill: {reviewRevision.folder}</span>
+                <div className="skill-review-backup">{reviewRevision.backup}</div>
+              </div>
+              <button
+                type="button"
+                className="log-modal-close"
+                onClick={closeSkillReview}
+                disabled={revisionRestoring}
+              >
+                Close
+              </button>
+            </div>
+            <div className="log-modal-body skill-review-body">
+              {revisionLoading && <p className="empty-state">Loading skill revision…</p>}
+              {revisionError && <div className="error-banner">{revisionError}</div>}
+              {revisionConfirmation && (
+                <div className="skill-review-confirmation">{revisionConfirmation}</div>
+              )}
+              {revisionDetail && (
+                <div className="skill-diff-container">
+                  <ReactDiffViewer
+                    oldValue={normalizeSkillDiffContent(revisionDetail.old_content)}
+                    newValue={normalizeSkillDiffContent(revisionDetail.new_content)}
+                    compareMethod={DiffMethod.WORDS}
+                    splitView
+                    leftTitle="Old skill"
+                    rightTitle="New skill"
+                    styles={{
+                      titleBlock: {
+                        minHeight: '2.5rem',
+                        padding: '0.65rem 1rem',
+                        fontWeight: 600,
+                        lineHeight: 1.35,
+                        overflow: 'visible'
+                      }
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="skill-review-footer">
+              <button
+                type="button"
+                className="skill-review-danger"
+                onClick={restoreSkillRevision}
+                disabled={revisionLoading || revisionRestoring || !revisionDetail}
+              >
+                {revisionRestoring ? 'Restoring…' : 'Go back to old skill'}
+              </button>
+              <button
+                type="button"
+                className="skill-review-secondary"
+                onClick={closeSkillReview}
+                disabled={revisionLoading || revisionRestoring}
+              >
+                Keep skill
+              </button>
             </div>
           </div>
         </div>

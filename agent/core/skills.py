@@ -13,10 +13,10 @@ dependency — supporting:
                          into spaces)
 """
 
+import os
 from typing import Dict, List
 
-from core.fs import resolve_folder_abs, read_text_file
-import os
+from core.fs import resolve_folder_abs, read_text_file, safe_abs_path
 
 
 def parse_frontmatter(skill_text: str) -> Dict[str, str]:
@@ -142,11 +142,14 @@ def build_environment_notes(skill_text: str) -> str:
 
 
 def load_folder_skill(folder_path: str) -> str:
-    """Read the SKILL.md from a workspace-relative folder.
+    """Read the SKILL.md from a workspace-relative or allowed absolute folder.
 
     Raises FileNotFoundError if no SKILL.md is present.
     """
-    folder_abs = resolve_folder_abs(folder_path)
+    if os.path.isabs(folder_path):
+        folder_abs = safe_abs_path(folder_path)
+    else:
+        folder_abs = resolve_folder_abs(folder_path)
     skill_file = os.path.join(folder_abs, "SKILL.md")
     if not os.path.isfile(skill_file):
         raise FileNotFoundError(f"SKILL.md not found in folder: {folder_path}")

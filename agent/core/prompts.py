@@ -39,6 +39,7 @@ def build_captain_prompt(folder_overview: str, folder_skill: str) -> str:
         "This tool will create another agent with specified folder."
         "This also applies when you see the need to use a different skill - create a new agent using delegate_task tool, and appoint the folder with that skill."
         "Each sub-agent must be assigned a folder that is the same as yours or a sub-folder under yours."
+        "When the user reports a correction or improvement to make to an existing SKILL.md, call the invoke_supervisor tool and pass along the user's instruction instead of modifying the skill yourself."
     )
     sections = [base, captain_rules]
     if folder_skill:
@@ -72,6 +73,37 @@ def build_worker_prompt(
         "If a request is outside this folder, say so plainly."
     )
     sections = [base, worker_rules, f"Folder SKILL.md:\n{skill_content}"]
+    environment_notes = build_environment_notes(skill_content)
+    if environment_notes:
+        sections.append(environment_notes)
+    if folder_overview:
+        sections.append(folder_overview)
+    return "\n\n".join(section for section in sections if section).strip()
+
+
+def build_supervisor_prompt(
+    folder_path: str,
+    skill_content: str,
+    folder_overview: str,
+) -> str:
+    """Assemble the supervisor agent's system prompt.
+
+    The supervisor revises other agents' SKILL.md files and has access to
+    revise_skill, but not delegation tools.
+    """
+    base = base_system_prompt()
+    supervisor_rules = (
+        "You are the supervisor agent. "
+        f"Your own instruction folder is '{folder_path}'. "
+        "Your job is to improve targeted SKILL.md files when the captain relays a user request. "
+        "Only edit skills; do not execute the target skill's domain task. "
+        "Never delegate work, never invoke another supervisor, and never inspect the agent roster. "
+        "Use revise_skill for every SKILL.md modification. "
+        "The revise_skill tool creates a mandatory backup before writing; do not bypass it with file-writing tools. "
+        "Rewrite target skills in clear, prescriptive language with explicit constraints and expected behavior. "
+        "Keep each revision scoped to the captain's instruction and modify only the targeted SKILL.md."
+    )
+    sections = [base, supervisor_rules, f"Supervisor SKILL.md:\n{skill_content}"]
     environment_notes = build_environment_notes(skill_content)
     if environment_notes:
         sections.append(environment_notes)
