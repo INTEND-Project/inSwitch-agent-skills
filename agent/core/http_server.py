@@ -22,6 +22,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from queue import Empty
 from typing import Any, Dict, Type, TYPE_CHECKING
+from urllib.parse import parse_qs, urlparse
 
 from tracing import start_trace
 from trace_api import handle_trace_request
@@ -117,8 +118,17 @@ def make_handler_class(
             )
 
         def do_GET(self) -> None:
-            if self.path == "/skills":
+            parsed_url = urlparse(self.path)
+            if parsed_url.path == "/skills":
                 self._send_json(200, {"skills": list_folder_overview(".")})
+                return
+            if parsed_url.path == "/skills/revision":
+                params = parse_qs(parsed_url.query)
+                result = supervision.read_revision(
+                    params.get("folder", [""])[0],
+                    params.get("backup", [""])[0],
+                )
+                self._send_json(400 if "error" in result else 200, result)
                 return
             if self.path == "/agents":
                 self._send_json(200, list_agents(manager.agents))

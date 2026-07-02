@@ -31,6 +31,41 @@ def pop_revisions(trace_id: str) -> List[Dict[str, str]]:
     return _REVISIONS_BY_TRACE.pop(trace_id, [])
 
 
+def read_revision(folder_path: str, backup_filename: str) -> Dict[str, Any]:
+    if (
+        not backup_filename.startswith("SKILL.")
+        or not backup_filename.endswith(".md")
+        or "/" in backup_filename
+        or "\\" in backup_filename
+        or ".." in backup_filename
+    ):
+        return {"error": "Invalid backup filename."}
+
+    try:
+        normalized_folder, folder_abs, skill_path = _resolve_workspace_skill(
+            folder_path
+        )
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    backup_abs = os.path.join(folder_abs, ".skill_backups", backup_filename)
+    if not os.path.isfile(backup_abs):
+        return {"error": "Backup file not found."}
+
+    try:
+        old_content = read_text_file(backup_abs)
+        new_content = read_text_file(skill_path)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    return {
+        "folder": normalized_folder,
+        "backup": backup_filename,
+        "old_content": old_content,
+        "new_content": new_content,
+    }
+
+
 def _resolve_workspace_skill(folder_path: str) -> tuple[str, str, str]:
     normalized_folder = normalize_folder_path(folder_path)
     folder_abs = resolve_folder_abs(normalized_folder)
