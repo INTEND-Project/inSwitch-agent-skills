@@ -28,6 +28,7 @@ from trace_api import handle_trace_request
 
 from core.agent import list_agents
 from core.fs import list_folder_overview
+from core.tools import supervision
 
 if TYPE_CHECKING:
     from core.agent import AgentManager
@@ -104,10 +105,15 @@ def make_handler_class(
                     manager, user_input.strip()
                 )
                 handle.set("response.length", len(response_text))
+                revisions = supervision.pop_revisions(handle.trace_id)
 
             self._send_json(
                 200,
-                {"response": response_text, "trace_id": handle.trace_id},
+                {
+                    "response": response_text,
+                    "trace_id": handle.trace_id,
+                    "skill_revisions": revisions,
+                },
             )
 
         def do_GET(self) -> None:

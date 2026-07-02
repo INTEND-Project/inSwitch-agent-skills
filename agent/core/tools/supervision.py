@@ -3,9 +3,9 @@
 import os
 import shutil
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-from tracing import start_span
+from tracing import current_trace_id, start_span
 
 from core.agent import AgentState
 from core.config import SUPERVISOR_DIR, WORKSPACE_DIR
@@ -13,6 +13,22 @@ from core.fs import normalize_folder_path, read_text_file, resolve_folder_abs
 from core.logging_hub import log_event
 from core.skills import extract_frontmatter_name, load_folder_skill
 from core.tools import tool, ToolContext
+
+
+_REVISIONS_BY_TRACE: Dict[str, List[Dict[str, str]]] = {}
+
+
+def record_revision(folder: str, backup_filename: str) -> None:
+    trace_id = current_trace_id()
+    if trace_id is None:
+        return
+    _REVISIONS_BY_TRACE.setdefault(trace_id, []).append(
+        {"folder": folder, "backup": backup_filename}
+    )
+
+
+def pop_revisions(trace_id: str) -> List[Dict[str, str]]:
+    return _REVISIONS_BY_TRACE.pop(trace_id, [])
 
 
 def _resolve_workspace_skill(folder_path: str) -> tuple[str, str, str]:
@@ -140,6 +156,7 @@ def revise_skill(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
             "backup_path": backup_path,
         },
     )
+    record_revision(normalized_folder, os.path.basename(backup_path))
     return {
         "status": "ok",
         "path": skill_path,
