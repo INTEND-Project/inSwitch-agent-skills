@@ -401,6 +401,11 @@ body {
   font-size: 0.75rem;
 }
 
+.log-modal-close:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .log-modal-body {
   padding: 0.9rem 1rem 1rem;
   overflow: auto;
@@ -739,8 +744,14 @@ body {
   word-break: break-word;
 }
 
-.trace-detail-link {
+.message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
   margin-top: 0.6rem;
+}
+
+.trace-detail-link {
   border: 1px solid #f9a8d4;
   background: #fce7f3;
   color: #831843;
@@ -754,6 +765,99 @@ body {
 .trace-detail-link:hover {
   background: #fbcfe8;
   border-color: #f472b6;
+}
+
+.skill-review-link {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.skill-review-link:hover {
+  background: #bbf7d0;
+  border-color: #22c55e;
+}
+
+.skill-review-modal {
+  width: min(1180px, 96vw);
+  max-height: 92vh;
+}
+
+.skill-review-header {
+  align-items: flex-start;
+}
+
+.skill-review-backup {
+  margin-top: 0.15rem;
+  color: #64748b;
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.skill-review-body {
+  display: grid;
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+.skill-diff-container {
+  min-height: 0;
+  overflow: auto;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: #ffffff;
+}
+
+.skill-diff-container table {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+  font-size: 0.78rem;
+}
+
+.skill-review-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  padding: 0.8rem 1rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(241, 245, 249, 0.82);
+}
+
+.skill-review-secondary,
+.skill-review-danger {
+  border: none;
+  border-radius: 999px;
+  padding: 0.6rem 0.95rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.skill-review-secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.skill-review-danger {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.skill-review-secondary:disabled,
+.skill-review-danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.skill-review-confirmation {
+  padding: 0.65rem 0.9rem;
+  border-radius: 0.9rem;
+  background: rgba(187, 247, 208, 0.85);
+  color: #166534;
+  font-size: 0.85rem;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.35);
 }
 
 .markdown-content {
