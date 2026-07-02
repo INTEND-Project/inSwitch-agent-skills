@@ -1291,19 +1291,19 @@ const App: React.FC = () => {
             <div className="skill-review-footer">
               <button
                 type="button"
-                className="skill-review-secondary"
-                onClick={closeSkillReview}
-                disabled={revisionLoading || revisionRestoring}
-              >
-                Keep skill
-              </button>
-              <button
-                type="button"
                 className="skill-review-danger"
                 onClick={restoreSkillRevision}
                 disabled={revisionLoading || revisionRestoring || !revisionDetail}
               >
                 {revisionRestoring ? 'Restoring…' : 'Go back to old skill'}
+              </button>
+              <button
+                type="button"
+                className="skill-review-secondary"
+                onClick={closeSkillReview}
+                disabled={revisionLoading || revisionRestoring}
+              >
+                Keep skill
               </button>
             </div>
           </div>
