@@ -306,6 +306,16 @@ In the dashboard, supervisor spans and `skill_revised` events are given a colour
 distinct from the captain and the workers, so an intervention on the skills
 stands out at a glance in the trace list and the waterfall.
 
+Revisions are also surfaced directly in the chat. The `/intent` response carries
+a `skill_revisions` field listing every revision performed during that turn
+(target folder and backup filename). When present, the agent's chat message
+shows a "Review skill" button next to "View Trace Detail". It opens a
+near-full-screen modal with a git-style side-by-side diff of the skill before
+and after the revision (served by `GET /skills/revision`), so the operator sees
+exactly what the supervisor wrote, not what it reported having written. The
+modal offers two actions: "Keep skill" simply closes it, and "Go back to old
+skill" triggers the deterministic restore described in section 9.
+
 This visibility is not cosmetic. Because a revision rewrites a prompt in natural
 language, its effects are not always fully predictable from the instruction
 alone, and the trace plus the file system are the means by which an unexpected
@@ -329,17 +339,31 @@ version control. Git already serves as the canonical history of skills authored
 by hand; `.skill_backups/` is a separate, operational safety net for skills
 rewritten live by the supervisor.
 
-Recovery is deliberately manual. The supervisor has no notion of rollback. To
-restore a previous version, an operator copies the chosen backup back over the
-`SKILL.md` by hand. Asking the supervisor to undo a revision would be the wrong
-mechanism: it would rewrite the file again, create a further backup of the
-current content, and risk reconstructing the old version from memory rather than
-restoring it faithfully. Backup is automatic; restoration is not.
+Recovery is deterministic, never LLM-driven. The supervisor itself has no notion
+of rollback, and this is deliberate: asking the supervisor to undo a revision
+would be the wrong mechanism, since it would rewrite the file again, create a
+further backup of the current content, and risk reconstructing the old version
+from memory rather than restoring it faithfully.
 
-A consequence to keep in mind: restoring a backup by hand does not clear any live
-agent's cache, since only `revise_skill` performs invalidation. If a worker bound
-to the restored skill is already in memory, it must be allowed to reload, for
-instance by restarting the session, for the restoration to take effect.
+Instead, restoration is a plain file operation exposed as
+`POST /skills/restore`. Given a target folder and a backup filename (both
+strictly validated against path traversal: the filename must match the
+`SKILL.*.md` pattern and contain no separators), the endpoint copies the backup
+over the live `SKILL.md`, performs the same two-level cache invalidation as
+`revise_skill` (via the shared `invalidate_agents_for_folder` helper, clearing
+`folder_skill` and `last_response_id` for every matching live agent), and emits
+a `skill_restored` event. No LLM is involved at any point: the restored content
+is byte for byte the backup.
+
+The operator triggers it from the "Review skill" modal in the dashboard ("Go
+back to old skill"), after seeing the diff of what the revision changed. The
+human stays in the loop, the operation stays deterministic.
+
+One caveat remains: copying a backup over the `SKILL.md` by hand in a shell
+bypasses this endpoint and therefore bypasses the cache invalidation. A live
+worker would keep the revised skill in memory until the session restarts.
+Hand-restoration should be reserved for offline maintenance; during a running
+session, the endpoint is the correct path.
 
 ---
 
@@ -353,8 +377,15 @@ apply a targeted diff. This is robust on Markdown and avoids fragile partial
 edits, but it means the supervisor reconstructs the whole file each time, and a
 rewrite can incidentally alter formatting or wording that the instruction did not
 mention. In practice, revisions have been observed to drop Markdown code fences
-or to enrich a rule beyond what was asked. The mechanism is sound; the cost is
-that the agent does more than the minimum, and only inspection reveals it.
+or to enrich a rule beyond what was asked (in one case adding a full nine-line
+comparison algorithm nobody requested). Two mitigations are in place. The
+supervisor's `SKILL.md` now mandates minimal revisions: every line not affected
+by the request must be preserved byte for byte, and no new sections, algorithms,
+examples, or fallback behaviors may be added unless explicitly requested. And
+the "Review skill" diff modal makes any residual over-editing visible at a
+glance, turning a previously invisible drift into something the operator reviews
+and can revert in two clicks. The constraint is still prompt-level, so it is a
+soft guarantee; the diff review is what makes it verifiable.
 
 **Emergent side effects of natural-language revision.** Because a skill is a
 prompt, an ambiguous phrase in a revised skill can induce behaviour nobody
@@ -379,14 +410,23 @@ and that hard guarantees are better enforced by the mechanism (the tools an agen
 is given, the `/workspace` boundary, the mandatory backup) than by wording in a
 prompt.
 
-**No rollback capability.** As described in section 9, restoration is manual by
-design. An automatic, safe rollback through the supervisor is a possible future
-addition, but it would need a real restore primitive, not a re-revision.
+**Rollback: resolved by the restore primitive.** Earlier iterations listed the
+absence of rollback as a limitation. This is now addressed: `POST
+/skills/restore` provides exactly the primitive that was called for, a
+deterministic file copy with the same two-level cache invalidation as
+`revise_skill`, wired to the "Review skill" modal. The remaining caveat is
+narrow: hand-copying a backup in a shell still bypasses invalidation (section
+9), and the restore always targets the current `SKILL.md`, so after several
+successive revisions the diff shown for an older backup is cumulative rather
+than per-revision.
 
-**Manual cache coherence on manual restore.** Hand-restoring a backup bypasses
-the invalidation that `revise_skill` performs, so a live agent may keep a stale
-skill until the session is restarted. A restore primitive, if added, should
-perform the same two-level invalidation.
+**In-memory revision registry.** The link between a chat message and its
+revisions (`skill_revisions` in the `/intent` response) is held in process
+memory. After a container restart, old messages keep working because the backup
+and the `SKILL.md` are on disk, but a response produced before the restart could
+not be re-associated with its revisions if the registry were consulted again.
+Acceptable for the current single-process deployment; a persistent store would
+be needed in a multi-process one.
 
 These points are not defects to be hidden. They are the natural consequences of
 making prompts editable at runtime, and the observability layer exists precisely
