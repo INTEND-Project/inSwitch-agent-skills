@@ -31,6 +31,28 @@ def pop_revisions(trace_id: str) -> List[Dict[str, str]]:
     return _REVISIONS_BY_TRACE.pop(trace_id, [])
 
 
+def invalidate_agents_for_folder(
+    agents: Dict[str, AgentState], normalized_folder: str
+) -> int:
+    invalidated_agents = 0
+    for agent in agents.values():
+        if agent.folder_path is None:
+            continue
+        try:
+            agent_folder = normalize_folder_path(agent.folder_path)
+        except Exception:
+            continue
+        if agent_folder != normalized_folder:
+            continue
+        agent.folder_skill = None
+        agent.skill_name = None
+        # Reset last_response_id so the old SKILL.md does not remain
+        # implicitly available through the OpenAI previous_response_id chain.
+        agent.last_response_id = None
+        invalidated_agents += 1
+    return invalidated_agents
+
+
 def read_revision(folder_path: str, backup_filename: str) -> Dict[str, Any]:
     if (
         not backup_filename.startswith("SKILL.")
@@ -63,6 +85,43 @@ def read_revision(folder_path: str, backup_filename: str) -> Dict[str, Any]:
         "backup": backup_filename,
         "old_content": old_content,
         "new_content": new_content,
+    }
+
+
+def restore_revision(
+    folder_path: str, backup_filename: str, agents: Dict[str, AgentState]
+) -> Dict[str, Any]:
+    if (
+        not backup_filename.startswith("SKILL.")
+        or not backup_filename.endswith(".md")
+        or "/" in backup_filename
+        or "\\" in backup_filename
+        or ".." in backup_filename
+    ):
+        return {"error": "Invalid backup filename."}
+
+    try:
+        normalized_folder, folder_abs, skill_path = _resolve_workspace_skill(
+            folder_path
+        )
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    backup_abs = os.path.join(folder_abs, ".skill_backups", backup_filename)
+    if not os.path.isfile(backup_abs):
+        return {"error": "Backup file not found."}
+
+    try:
+        shutil.copy2(backup_abs, skill_path)
+    except Exception as exc:
+        return {"error": f"Failed to restore SKILL.md: {exc}"}
+
+    invalidated = invalidate_agents_for_folder(agents, normalized_folder)
+    log_event("skill_restored", {"folder": folder_abs, "backup": backup_filename})
+    return {
+        "status": "ok",
+        "folder": normalized_folder,
+        "invalidated_agents": invalidated,
     }
 
 
@@ -166,22 +225,9 @@ def revise_skill(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
     except Exception as exc:
         return {"error": f"Failed to write SKILL.md: {exc}"}
 
-    invalidated_agents = 0
-    for agent in ctx.agents.values():
-        if agent.folder_path is None:
-            continue
-        try:
-            agent_folder = normalize_folder_path(agent.folder_path)
-        except Exception:
-            continue
-        if agent_folder != normalized_folder:
-            continue
-        agent.folder_skill = None
-        agent.skill_name = None
-        # Reset last_response_id so the old SKILL.md does not remain
-        # implicitly available through the OpenAI previous_response_id chain.
-        agent.last_response_id = None
-        invalidated_agents += 1
+    invalidated_agents = invalidate_agents_for_folder(
+        ctx.agents, normalized_folder
+    )
 
     log_event(
         "skill_revised",

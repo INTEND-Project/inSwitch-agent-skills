@@ -83,6 +83,30 @@ def make_handler_class(
             self.end_headers()
 
         def do_POST(self) -> None:
+            if self.path == "/skills/restore":
+                length = int(self.headers.get("Content-Length", "0"))
+                raw = self.rfile.read(length) if length > 0 else b""
+                try:
+                    data = json.loads(raw.decode("utf-8")) if raw else {}
+                except json.JSONDecodeError:
+                    self._send_json(400, {"error": "Invalid JSON body."})
+                    return
+
+                folder = data.get("folder")
+                backup = data.get("backup")
+                if not isinstance(folder, str) or not isinstance(backup, str):
+                    self._send_json(
+                        400,
+                        {"error": "Missing 'folder' or 'backup' string."},
+                    )
+                    return
+
+                result = supervision.restore_revision(
+                    folder, backup, manager.agents
+                )
+                self._send_json(400 if "error" in result else 200, result)
+                return
+
             if self.path != "/intent":
                 self._send_json(404, {"error": "Not found."})
                 return
