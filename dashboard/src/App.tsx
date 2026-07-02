@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ReactDiffViewer from 'react-diff-viewer-continued';
+import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { prism } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -83,6 +83,9 @@ const detectCodeLanguage = (code: string) => {
   }
   return 'text';
 };
+
+const normalizeSkillDiffContent = (content: string) =>
+  content.replace(/\r\n/g, '\n').split('\n').map((line) => line.replace(/\s+$/g, '')).join('\n');
 
 const initialMessages: Message[] = [
   {
@@ -1270,8 +1273,9 @@ const App: React.FC = () => {
               {revisionDetail && (
                 <div className="skill-diff-container">
                   <ReactDiffViewer
-                    oldValue={revisionDetail.old_content}
-                    newValue={revisionDetail.new_content}
+                    oldValue={normalizeSkillDiffContent(revisionDetail.old_content)}
+                    newValue={normalizeSkillDiffContent(revisionDetail.new_content)}
+                    compareMethod={DiffMethod.WORDS}
                     splitView
                     leftTitle="Old skill"
                     rightTitle="New skill"
