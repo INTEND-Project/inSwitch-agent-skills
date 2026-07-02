@@ -1275,6 +1275,15 @@ const App: React.FC = () => {
                     splitView
                     leftTitle="Old skill"
                     rightTitle="New skill"
+                    styles={{
+                      titleBlock: {
+                        minHeight: '2.5rem',
+                        padding: '0.65rem 1rem',
+                        fontWeight: 600,
+                        lineHeight: 1.35,
+                        overflow: 'visible'
+                      }
+                    }}
                   />
                 </div>
               )}

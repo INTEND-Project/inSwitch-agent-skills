@@ -803,6 +803,7 @@ body {
 
 .skill-diff-container {
   min-height: 0;
+  max-height: min(62vh, 720px);
   overflow: auto;
   border-radius: 0.85rem;
   border: 1px solid rgba(148, 163, 184, 0.45);
@@ -835,8 +836,9 @@ body {
 }
 
 .skill-review-secondary {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: #16a34a;
+  color: #ffffff;
+  border: 1px solid rgba(22, 163, 74, 0.7);
 }
 
 .skill-review-danger {
