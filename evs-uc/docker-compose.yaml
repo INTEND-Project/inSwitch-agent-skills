@@ -1,0 +1,23 @@
+services:
+  agent:
+    image: songhui/inswitch-evs-uc:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        AGENT_IMAGE: songhui/inswitch:${TAG:-latest}
+    ports:
+      - "8085:8085"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./workspace:/workspace
+      - ./logs:/logs
+      - ./credentials:/credentials:ro
+  dashboard:
+    image: songhui/inswitch-dashboard:${TAG:-latest}
+    build:
+      context: ../dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8086"
