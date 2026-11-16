@@ -24,3 +24,48 @@ questions. Choose the commands and namespace that fit the request, such as:
 Summarize the relevant results and report any access or connection errors.
 
 Default namespace is intend-infrastructure, and default cluster configuration is /credentials/dell-cluster
+
+# Deploy new cache and register it to the storage
+
+Step 1:
+Install the new cache:
+
+```
+helm upgrade --install nginx-us-central-1 ./charts/nginx-cache \
+-n intend-infrastructure \
+-f c./nginx-cache/nginx-cache/values.edge-us-central.yaml \
+--kubeconfig /credentials/dell-cluster
+```
+
+Step 2
+Register the cache with the Storage API, otherwise the API doesn't know the
+region exists:
+```
+helm upgrade intend-storage-api ./charts/application \
+-n intend-infrastructure \
+--reuse-values \
+-f ./nginx-cache/application/values.nodes-us-central.yaml \
+--kubeconfig /credentials/dell-cluster
+```
+
+The working directory for Helm should be /credentials/. Otherwise, revise the relative paths by the absolute ones.
+
+Current deployment is tested with region name use-central. Other values may be supported based on the available value files. However, by default, the three other regions are already available. 
+
+# Undo the deployment
+
+Step 1: uninstall the cache
+```
+helm uninstall nginx-us-central-1 -n intend-infrastructure
+```
+
+Step 2: reconfigure the storage API
+
+```
+```
+helm upgrade intend-storage-api ./charts/application \
+-n intend-infrastructure \
+--reuse-values \
+-f ./nginx-cache/application/values.nodes-original-three.yaml \
+--kubeconfig /credentials/dell-cluster
+```
