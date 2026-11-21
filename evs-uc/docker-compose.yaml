@@ -13,7 +13,7 @@ services:
     volumes:
       - ./workspace:/workspace
       - ./logs:/logs
-      - ./credentials:/credentials:ro
+      - ./credentials:/credentials
   dashboard:
     image: songhui/inswitch-dashboard:${TAG:-latest}
     build:
